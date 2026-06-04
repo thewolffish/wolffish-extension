@@ -1,0 +1,40 @@
+{
+  "extensionName": {
+    "description": "Extension name",
+    "message": "وولف فيش"
+  },
+  "extensionDescription": {
+    "description": "Extension description",
+    "message": "إمكانية المتصفح لوكيل وولف فيش الذكي"
+  },
+  "bidiDir": { "message": "rtl" },
+  "locale": { "message": "ar" },
+  "statusConnected": { "message": "متصل" },
+  "statusConnecting": { "message": "جاري الاتصال" },
+  "statusDisconnected": { "message": "بانتظار التطبيق" },
+  "eventTypeNav": { "message": "تنقل" },
+  "eventTypeClick": { "message": "نقر" },
+  "eventTypeType": { "message": "كتابة" },
+  "eventTypeRead": { "message": "قراءة" },
+  "eventTypeTab": { "message": "تبويب" },
+  "eventTypeJs": { "message": "سكربت" },
+  "eventTypeCookie": { "message": "كوكيز" },
+  "eventTypeWait": { "message": "انتظار" },
+  "eventTypeSnap": { "message": "لقطة" },
+  "eventTypeDl": { "message": "تحميل" },
+  "sampleNavigate": { "message": "انتقل إلى $1", "placeholders": { "1": { "content": "$1" } } },
+  "sampleClick": { "message": "نقر على $1", "placeholders": { "1": { "content": "$1" } } },
+  "sampleType": { "message": "كتب في $1", "placeholders": { "1": { "content": "$1" } } },
+  "sampleRead": { "message": "قرأ الصفحة كـ $1", "placeholders": { "1": { "content": "$1" } } },
+  "sampleTab": { "message": "$1", "placeholders": { "1": { "content": "$1" } } },
+  "sampleScreenshot": { "message": "التقط $1", "placeholders": { "1": { "content": "$1" } } },
+  "sampleScript": { "message": "نفّذ $1", "placeholders": { "1": { "content": "$1" } } },
+  "sampleCookie": { "message": "$1 كوكيز لـ $2", "placeholders": { "1": { "content": "$1" }, "2": { "content": "$2" } } },
+  "sampleWait": { "message": "انتظر $1", "placeholders": { "1": { "content": "$1" } } },
+  "sampleDownload": { "message": "حمّل $1", "placeholders": { "1": { "content": "$1" } } },
+  "displayErrorInfo": { "message": "حدث خطأ" },
+  "displayErrorDescription": { "message": "عذراً، حدث خطأ أثناء تحميل الصفحة." },
+  "displayErrorDetailsInfo": { "message": "تفاصيل الخطأ:" },
+  "displayErrorUnknownErrorInfo": { "message": "خطأ غير معروف" },
+  "displayErrorReset": { "message": "إعادة المحاولة" }
+}
