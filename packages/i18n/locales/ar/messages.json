@@ -34,6 +34,12 @@
   "sampleDownload": { "message": "حمّل $1", "placeholders": { "1": { "content": "$1" } } },
   "displayErrorInfo": { "message": "حدث خطأ" },
   "displayErrorDescription": { "message": "عذراً، حدث خطأ أثناء تحميل الصفحة." },
+  "extensionTest": { "message": "اختبار الإضافة" },
+  "justNow": { "message": "الآن" },
+  "noConversations": { "message": "لا توجد محادثات بعد" },
+  "eventsCount": { "message": "$1 أحداث", "placeholders": { "1": { "content": "$1" } } },
+  "emptyConnected": { "message": "جاهز — ستظهر الأحداث هنا أثناء تصفح الوكيل" },
+  "emptyDisconnected": { "message": "شغّل وولف فيش للبدء بالتحكم بالمتصفح" },
   "displayErrorDetailsInfo": { "message": "تفاصيل الخطأ:" },
   "displayErrorUnknownErrorInfo": { "message": "خطأ غير معروف" },
   "displayErrorReset": { "message": "إعادة المحاولة" }

@@ -2,7 +2,7 @@ import './SidePanel.css';
 import { t } from '@extension/i18n';
 import { withErrorBoundary, withSuspense } from '@extension/shared';
 import { ErrorDisplay, LoadingSpinner } from '@extension/ui';
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { ConnectionStatus } from '@extension/shared';
 
 const STATUS_COLORS = {
@@ -77,7 +77,7 @@ const formatTime = (ts: number): string => {
 const formatRelative = (ts: number): string => {
   const diffMs = Date.now() - ts;
   const diffMin = Math.round(diffMs / 60000);
-  if (diffMin < 1) return 'just now';
+  if (diffMin < 1) return t('justNow');
   if (diffMin < 60) return rtf.format(-diffMin, 'minute');
   const diffHr = Math.round(diffMin / 60);
   if (diffHr < 24) return rtf.format(-diffHr, 'hour');
@@ -98,20 +98,30 @@ const SidePanel = () => {
   const [viewingConversation, setViewingConversation] = useState<string | null>(null);
 
   useEffect(() => {
-    chrome.runtime.sendMessage({ type: 'get_connection_status' }, (response: { status?: ConnectionStatus; port?: number }) => {
-      if (response?.status) setStatus(response.status);
-      if (response?.port) setPort(response.port);
-    });
+    chrome.runtime.sendMessage(
+      { type: 'get_connection_status' },
+      (response: { status?: ConnectionStatus; port?: number }) => {
+        if (response?.status) setStatus(response.status);
+        if (response?.port) setPort(response.port);
+      },
+    );
 
-    chrome.runtime.sendMessage({ type: 'get_events' }, (response: { events?: EventEntry[]; conversations?: ConversationSummary[]; activeConversation?: string | null }) => {
-      if (response?.events?.length) setEvents(response.events);
-      if (response?.conversations?.length) setConversations(response.conversations);
-      if (response?.activeConversation) {
-        setActiveConversation(response.activeConversation);
-      } else {
-        setView('conversations');
-      }
-    });
+    chrome.runtime.sendMessage(
+      { type: 'get_events' },
+      (response: {
+        events?: EventEntry[];
+        conversations?: ConversationSummary[];
+        activeConversation?: string | null;
+      }) => {
+        if (response?.events?.length) setEvents(response.events);
+        if (response?.conversations?.length) setConversations(response.conversations);
+        if (response?.activeConversation) {
+          setActiveConversation(response.activeConversation);
+        } else {
+          setView('conversations');
+        }
+      },
+    );
 
     const listener = (message: Record<string, unknown>) => {
       if (message.type === 'status_update' && message.status) {
@@ -172,20 +182,14 @@ const SidePanel = () => {
     chrome.runtime.sendMessage({ type: 'get_conversation_events', conversationId });
   }, []);
 
-  const handleBackToActive = useCallback(() => {
-    if (activeConversation) {
-      chrome.runtime.sendMessage({ type: 'get_conversation_events', conversationId: activeConversation });
-    }
-    setViewingConversation(null);
-    setView('events');
-  }, [activeConversation]);
-
   const statusColor = STATUS_COLORS[status];
   const statusLabel = t(STATUS_KEYS[status]);
   const logoUrl = chrome.runtime.getURL('side-panel/wolffish-logo.png');
 
   const displayConversation = viewingConversation ?? activeConversation;
-  const displayTitle = conversations.find(c => c.conversationId === displayConversation)?.title ?? displayConversation;
+  const rawTitle =
+    conversations.find(c => c.conversationId === displayConversation)?.title ?? displayConversation ?? '';
+  const displayTitle = t(rawTitle as never) || rawTitle;
 
   return (
     <div className={`panel ${theme}`} dir={dir}>
@@ -197,10 +201,7 @@ const SidePanel = () => {
           {port > 0 && <code className="panel-version">:{port}</code>}
         </div>
         <div className={`panel-status ${status !== 'connected' ? 'pulse' : ''}`}>
-          <span
-            className="panel-dot"
-            style={{ backgroundColor: statusColor }}
-          />
+          <span className="panel-dot" style={{ backgroundColor: statusColor }} />
           <span className="panel-status-text" style={{ color: statusColor }}>
             {statusLabel}
           </span>
@@ -210,19 +211,16 @@ const SidePanel = () => {
       {view === 'conversations' ? (
         <div className="panel-conversations">
           {conversations.length === 0 ? (
-            <div className="panel-empty">
-              No conversations yet
-            </div>
+            <div className="panel-empty">{t('noConversations')}</div>
           ) : (
             conversations.map(conv => (
               <button
                 key={conv.conversationId}
                 className={`conversation-card ${conv.conversationId === activeConversation ? 'active' : ''}`}
-                onClick={() => handleSelectConversation(conv.conversationId)}
-              >
-                <span className="conversation-name">{conv.title}</span>
+                onClick={() => handleSelectConversation(conv.conversationId)}>
+                <span className="conversation-name">{t(conv.title as never) || conv.title}</span>
                 <span className="conversation-meta">
-                  {conv.eventCount} events · {formatRelative(conv.lastTimestamp)}
+                  {t('eventsCount', String(conv.eventCount))} · {formatRelative(conv.lastTimestamp)}
                 </span>
               </button>
             ))
@@ -239,9 +237,7 @@ const SidePanel = () => {
 
           {events.length === 0 && (
             <div className={`panel-empty ${status === 'connected' ? '' : 'pulse'}`}>
-              {status === 'connected'
-                ? 'Ready — events will appear here as the agent browses'
-                : 'Launch Wolffish to start controlling the browser'}
+              {status === 'connected' ? t('emptyConnected') : t('emptyDisconnected')}
             </div>
           )}
           {events.map(event => {

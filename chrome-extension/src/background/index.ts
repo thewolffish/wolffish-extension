@@ -2,7 +2,6 @@ import 'webextension-polyfill';
 import {
   COMMAND_TIMEOUT_MS,
   DEFAULT_PORT,
-  RECONNECT,
   HEARTBEAT_INTERVAL_MS,
   WolffishCommands,
   CONTENT_SCRIPT_COMMANDS,
@@ -100,7 +99,7 @@ const scheduleReconnect = (): void => {
   api.alarms.create(RECONNECT_ALARM, { delayInMinutes: 0.05 });
 };
 
-api.alarms.onAlarm.addListener((alarm) => {
+api.alarms.onAlarm.addListener(alarm => {
   if (alarm.name === RECONNECT_ALARM && connectionStatus !== 'connected') {
     connectWebSocket(connectionPort);
   }
@@ -668,7 +667,7 @@ const handleWolffishEvent = (event: { type: 'event'; event: string; data: unknow
   }
 
   if (event.event === 'event_logged') {
-    const entry = event.data as typeof cachedEvents[0];
+    const entry = event.data as (typeof cachedEvents)[0];
     cachedEvents.unshift(entry);
     api.runtime.sendMessage({ payload: { event: 'event_logged', data: entry } }).catch(() => {});
     return;
@@ -689,36 +688,37 @@ const handleWolffishEvent = (event: { type: 'event'; event: string; data: unknow
 
 // ─── Message Listener (side panel queries only) ─────────────────────────────
 
-api.runtime.onMessage.addListener(
-  (message: { type?: string; conversationId?: string }, _sender, sendResponse) => {
-    if (message.type === 'get_connection_status') {
-      const actual: ConnectionStatus =
-        ws && ws.readyState === WebSocket.OPEN ? 'connected'
-        : ws && ws.readyState === WebSocket.CONNECTING ? 'connecting'
-        : 'disconnected';
-      if (actual !== connectionStatus) connectionStatus = actual;
-      sendResponse({ status: connectionStatus, port: connectionPort } as ConnectionStatusResponse);
-      return;
-    }
+api.runtime.onMessage.addListener((message: { type?: string; conversationId?: string }, _sender, sendResponse) => {
+  if (message.type === 'get_connection_status') {
+    const actual: ConnectionStatus =
+      ws && ws.readyState === WebSocket.OPEN
+        ? 'connected'
+        : ws && ws.readyState === WebSocket.CONNECTING
+          ? 'connecting'
+          : 'disconnected';
+    if (actual !== connectionStatus) connectionStatus = actual;
+    sendResponse({ status: connectionStatus, port: connectionPort } as ConnectionStatusResponse);
+    return true;
+  }
 
-    if (message.type === 'get_events') {
-      sendToServer({ type: 'get_conversations' });
-      sendResponse({
-        events: cachedEvents,
-        conversations: cachedConversations,
-        activeConversation: activeConversationId,
-      });
-      return true;
-    }
+  if (message.type === 'get_events') {
+    sendToServer({ type: 'get_conversations' });
+    sendResponse({
+      events: cachedEvents,
+      conversations: cachedConversations,
+      activeConversation: activeConversationId,
+    });
+    return true;
+  }
 
-    if (message.type === 'get_conversation_events' && message.conversationId) {
-      sendToServer({ type: 'get_conversation_events', conversationId: message.conversationId });
-      sendResponse({ events: cachedEvents });
-      return true;
-    }
+  if (message.type === 'get_conversation_events' && message.conversationId) {
+    sendToServer({ type: 'get_conversation_events', conversationId: message.conversationId });
+    sendResponse({ events: cachedEvents });
+    return true;
+  }
 
-  },
-);
+  return false;
+});
 
 // ─── Lifecycle & Startup ────────────────────────────────────────────────────
 
