@@ -1,6 +1,6 @@
 {
   "name": "wolffish-extension",
-  "version": "0.1.18",
+  "version": "0.1.22",
   "description": "Browser capability for the Wolffish AI agent",
   "license": "MIT",
   "author": "Younes Alturkey",
@@ -35,7 +35,7 @@
     "update-version": "bash bash-scripts/update_version.sh",
     "copy-env": "bash bash-scripts/copy_env.sh",
     "set-global-env": "bash bash-scripts/set_global_env.sh",
-    "release": "node -e \"const fs=require('fs'),p=JSON.parse(fs.readFileSync('package.json','utf8')),v=p.version.split('.'),nv=v[0]+'.'+v[1]+'.'+(+v[2]+1);require('child_process').execSync('bash bash-scripts/update_version.sh '+nv,{stdio:'inherit'})\" && pnpm build && node -e \"const{cpSync,rmSync,existsSync}=require('fs');const t='../wolffish-app/src/defaults/workspace/extension';if(existsSync(t))rmSync(t,{recursive:true});cpSync('dist',t,{recursive:true,filter:s=>!s.endsWith('.map')&&!s.endsWith('refresh.js')});console.log('Released to wolffish-app')\"",
+    "release": "bash bash-scripts/release.sh",
     "module-manager": "pnpm -F module-manager start",
     "postinstall": "pnpm copy-env"
   },
@@ -57,7 +57,7 @@
     "cross-env": "^7.0.3",
     "deepmerge": "^4.3.1",
     "eslint": "^9.27.0",
-    "eslint-config-prettier": "^10.1.18",
+    "eslint-config-prettier": "^10.1.22",
     "eslint-import-resolver-typescript": "^4.3.5",
     "eslint-plugin-import-x": "^4.12.2",
     "eslint-plugin-jsx-a11y": "^6.10.2",

@@ -1,6 +1,6 @@
 {
   "name": "@extension/tsconfig",
-  "version": "0.1.18",
+  "version": "0.1.22",
   "description": "Wolffish extension - TypeScript config",
   "private": true,
   "sideEffects": false
