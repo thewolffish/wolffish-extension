@@ -141,6 +141,7 @@ const connectWebSocket = async (port: number): Promise<void> => {
 
     const manifest = api.runtime.getManifest();
     sendToServer({ type: 'extension_info', version: manifest.version });
+    sendToServer({ type: 'get_conversations' });
   };
 
   ws.onclose = () => {
@@ -763,21 +764,34 @@ api.runtime.onMessage.addListener((message: { type?: string; conversationId?: st
   }
 
   if (message.type === 'get_events') {
-    // Try live data from server; respond immediately with cache
     sendToServer({ type: 'get_conversations' });
-    sendResponse({
-      events: cachedEvents,
-      conversations: cachedConversations,
-      activeConversation: activeConversationId,
-    });
+    // If in-memory cache is populated, respond immediately
+    if (cachedConversations.length > 0 || activeConversationId) {
+      sendResponse({
+        events: cachedEvents,
+        conversations: cachedConversations,
+        activeConversation: activeConversationId,
+      });
+    } else {
+      // Service worker just restarted — load from storage
+      cache.loadAll().then(data => {
+        cachedConversations = data.conversations;
+        activeConversationId = data.active;
+        cachedEvents = data.events;
+        sendResponse({
+          events: cachedEvents,
+          conversations: cachedConversations,
+          activeConversation: activeConversationId,
+        });
+      });
+    }
     return true;
   }
 
   if (message.type === 'get_conversation_events' && message.conversationId) {
     const id = message.conversationId;
-    // Try live fetch from server
     sendToServer({ type: 'get_conversation_events', conversationId: id });
-    // Respond from storage cache (covers offline case)
+    // Load from storage — works both online (as interim) and offline
     cache.loadEvents(id).then(events => {
       cachedEvents = events;
       sendResponse({ events });
