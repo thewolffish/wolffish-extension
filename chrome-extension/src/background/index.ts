@@ -638,11 +638,65 @@ const handleCommand = async (command: WolffishCommand): Promise<void> => {
   }
 };
 
+// ─── Persistent Cache ───────────────────────────────────────────────────────
+//
+// Mirrors in-memory state to chrome.storage.local so the side panel can
+// display conversations and events even when the Wolffish app is down.
+// Storage keys are prefixed with "wf:" to avoid collisions.
+
+const CACHE_MAX_CONVERSATIONS = 50;
+const CACHE_MAX_EVENTS = 500;
+
+type CachedEvent = { id: string; type: string; title: string; timestamp: number };
+type CachedConversation = { conversationId: string; title: string; eventCount: number; lastTimestamp: number };
+
+const cache = {
+  saveConversations(list: CachedConversation[]) {
+    const trimmed = list.slice(0, CACHE_MAX_CONVERSATIONS);
+    api.storage.local.set({ 'wf:conversations': trimmed }).catch(() => {});
+  },
+  saveActive(id: string | null) {
+    api.storage.local.set({ 'wf:active': id }).catch(() => {});
+  },
+  saveEvents(conversationId: string, events: CachedEvent[]) {
+    const trimmed = events.slice(0, CACHE_MAX_EVENTS);
+    api.storage.local.set({ [`wf:events:${conversationId}`]: trimmed }).catch(() => {});
+  },
+  async loadAll(): Promise<{
+    conversations: CachedConversation[];
+    active: string | null;
+    events: CachedEvent[];
+  }> {
+    try {
+      const data = await api.storage.local.get(['wf:conversations', 'wf:active']);
+      const conversations = (data['wf:conversations'] as CachedConversation[]) ?? [];
+      const active = (data['wf:active'] as string) ?? null;
+      let events: CachedEvent[] = [];
+      if (active) {
+        const evData = await api.storage.local.get([`wf:events:${active}`]);
+        events = (evData[`wf:events:${active}`] as CachedEvent[]) ?? [];
+      }
+      return { conversations, active, events };
+    } catch {
+      return { conversations: [], active: null, events: [] };
+    }
+  },
+  async loadEvents(conversationId: string): Promise<CachedEvent[]> {
+    try {
+      const data = await api.storage.local.get([`wf:events:${conversationId}`]);
+      return (data[`wf:events:${conversationId}`] as CachedEvent[]) ?? [];
+    } catch {
+      return [];
+    }
+  },
+};
+
 // ─── Wolffish Event Handler ─────────────────────────────────────────────────
 
-let cachedEvents: Array<{ id: string; type: string; title: string; timestamp: number }> = [];
-let cachedConversations: Array<{ conversationId: string; eventCount: number; lastTimestamp: number }> = [];
+let cachedEvents: CachedEvent[] = [];
+let cachedConversations: CachedConversation[] = [];
 let activeConversationId: string | null = null;
+let cacheRestored = false;
 
 const handleWolffishEvent = (event: { type: 'event'; event: string; data: unknown }): void => {
   if (event.event === 'port_update') {
@@ -659,28 +713,35 @@ const handleWolffishEvent = (event: { type: 'event'; event: string; data: unknow
   }
 
   if (event.event === 'events_sync') {
-    const data = event.data as { conversationId: string; events: typeof cachedEvents };
+    const data = event.data as { conversationId: string; events: CachedEvent[] };
     activeConversationId = data.conversationId;
     cachedEvents = (data.events ?? []).slice().reverse();
+    cache.saveActive(activeConversationId);
+    cache.saveEvents(activeConversationId, cachedEvents);
     api.runtime.sendMessage({ payload: { event: 'events_sync', data: event.data } }).catch(() => {});
     return;
   }
 
   if (event.event === 'event_logged') {
-    const entry = event.data as (typeof cachedEvents)[0];
+    const entry = event.data as CachedEvent;
     cachedEvents.unshift(entry);
+    if (activeConversationId) {
+      cache.saveEvents(activeConversationId, cachedEvents);
+    }
     api.runtime.sendMessage({ payload: { event: 'event_logged', data: entry } }).catch(() => {});
     return;
   }
 
   if (event.event === 'conversations_list') {
-    cachedConversations = event.data as typeof cachedConversations;
+    cachedConversations = event.data as CachedConversation[];
+    cache.saveConversations(cachedConversations);
     api.runtime.sendMessage({ payload: { event: 'conversations_list', data: event.data } }).catch(() => {});
     return;
   }
 
   if (event.event === 'conversation_events') {
-    const data = event.data as { conversationId: string; events: typeof cachedEvents };
+    const data = event.data as { conversationId: string; events: CachedEvent[] };
+    cache.saveEvents(data.conversationId, (data.events ?? []).slice().reverse());
     api.runtime.sendMessage({ payload: { event: 'conversation_events', data } }).catch(() => {});
     return;
   }
@@ -702,6 +763,7 @@ api.runtime.onMessage.addListener((message: { type?: string; conversationId?: st
   }
 
   if (message.type === 'get_events') {
+    // Try live data from server; respond immediately with cache
     sendToServer({ type: 'get_conversations' });
     sendResponse({
       events: cachedEvents,
@@ -712,8 +774,14 @@ api.runtime.onMessage.addListener((message: { type?: string; conversationId?: st
   }
 
   if (message.type === 'get_conversation_events' && message.conversationId) {
-    sendToServer({ type: 'get_conversation_events', conversationId: message.conversationId });
-    sendResponse({ events: cachedEvents });
+    const id = message.conversationId;
+    // Try live fetch from server
+    sendToServer({ type: 'get_conversation_events', conversationId: id });
+    // Respond from storage cache (covers offline case)
+    cache.loadEvents(id).then(events => {
+      cachedEvents = events;
+      sendResponse({ events });
+    });
     return true;
   }
 
@@ -754,7 +822,20 @@ wolffishConnectionStorage.subscribe(() => {
   }
 });
 
-// Connect immediately on service worker start (covers restarts)
+// Restore cache from storage, then connect
+cache
+  .loadAll()
+  .then(data => {
+    if (!cacheRestored) {
+      cachedConversations = data.conversations;
+      activeConversationId = data.active;
+      cachedEvents = data.events;
+      cacheRestored = true;
+      log(`Cache restored: ${data.conversations.length} conversations, ${data.events.length} events`);
+    }
+  })
+  .catch(() => {});
+
 startConnection().catch(err => logError('Failed to start connection:', err));
 
 log('Service worker loaded');
