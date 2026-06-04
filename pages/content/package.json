@@ -1,6 +1,6 @@
 {
   "name": "@wolffish/content-script",
-  "version": "0.1.25",
+  "version": "0.1.26",
   "description": "Wolffish extension - content script",
   "type": "module",
   "private": true,

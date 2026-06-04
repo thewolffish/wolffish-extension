@@ -783,6 +783,10 @@ api.runtime.onMessage.addListener((message: { type?: string; conversationId?: st
           conversations: cachedConversations,
           activeConversation: activeConversationId,
         });
+        // Also emit so the side panel listener picks it up
+        api.runtime
+          .sendMessage({ payload: { event: 'conversations_list', data: cachedConversations } })
+          .catch(() => {});
       });
     }
     return true;
@@ -791,9 +795,12 @@ api.runtime.onMessage.addListener((message: { type?: string; conversationId?: st
   if (message.type === 'get_conversation_events' && message.conversationId) {
     const id = message.conversationId;
     sendToServer({ type: 'get_conversation_events', conversationId: id });
-    // Load from storage — works both online (as interim) and offline
+    // Always emit from cache so the side panel updates even when offline
     cache.loadEvents(id).then(events => {
       cachedEvents = events;
+      api.runtime
+        .sendMessage({ payload: { event: 'conversation_events', data: { conversationId: id, events } } })
+        .catch(() => {});
       sendResponse({ events });
     });
     return true;
