@@ -737,6 +737,10 @@ const handleWolffishEvent = (event: { type: 'event'; event: string; data: unknow
     cachedConversations = event.data as CachedConversation[];
     cache.saveConversations(cachedConversations);
     api.runtime.sendMessage({ payload: { event: 'conversations_list', data: event.data } }).catch(() => {});
+    // Pre-fetch events for all conversations so they're available offline
+    for (const conv of cachedConversations) {
+      sendToServer({ type: 'get_conversation_events', conversationId: conv.conversationId });
+    }
     return;
   }
 
