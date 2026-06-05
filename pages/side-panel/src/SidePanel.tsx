@@ -93,7 +93,7 @@ const SidePanel = () => {
   const dir = t('bidiDir') || 'ltr';
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const [port, setPort] = useState<number>(0);
-  const [view, setView] = useState<View>('events');
+  const [view, setView] = useState<View>('conversations');
   const [events, setEvents] = useState<EventEntry[]>([]);
   const [, setPendingConversation] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
@@ -120,8 +120,6 @@ const SidePanel = () => {
         if (response?.conversations?.length) setConversations(response.conversations);
         if (response?.activeConversation) {
           setActiveConversation(response.activeConversation);
-        } else {
-          setView('conversations');
         }
       },
     );
