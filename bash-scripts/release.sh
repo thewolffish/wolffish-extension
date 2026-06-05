@@ -14,9 +14,10 @@ rm -rf "$TARGET"
 mkdir -p "$TARGET"
 rsync -a --exclude='*.map' --exclude='refresh.js' dist/ "$TARGET/"
 
-# Commit and push
+# Commit, tag, and push
 git add -A
 git commit -m "release: v${VERSION}"
-git push
+git tag "v${VERSION}"
+git push && git push --tags
 
 echo "Released v${VERSION}"
