@@ -1,6 +1,6 @@
 {
   "name": "@extension/i18n",
-  "version": "0.1.32",
+  "version": "0.1.34",
   "description": "Wolffish extension - i18n",
   "type": "module",
   "private": true,

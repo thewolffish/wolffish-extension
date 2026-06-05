@@ -1,6 +1,6 @@
 {
   "name": "@extension/vite-config",
-  "version": "0.1.32",
+  "version": "0.1.34",
   "description": "Wolffish extension - Vite config",
   "type": "module",
   "private": true,

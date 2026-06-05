@@ -95,6 +95,7 @@ const SidePanel = () => {
   const [port, setPort] = useState<number>(0);
   const [view, setView] = useState<View>('events');
   const [events, setEvents] = useState<EventEntry[]>([]);
+  const [, setPendingConversation] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [activeConversation, setActiveConversation] = useState<string | null>(null);
   const [viewingConversation, setViewingConversation] = useState<string | null>(null);
@@ -165,9 +166,16 @@ const SidePanel = () => {
           conversationId: string;
           events: EventEntry[];
         };
-        setViewingConversation(conversationId);
-        setEvents(convEvents.slice().reverse());
-        setView('events');
+        // Only switch view if the user explicitly selected this conversation
+        setPendingConversation(prev => {
+          if (prev === conversationId) {
+            setViewingConversation(conversationId);
+            setEvents(convEvents.slice().reverse());
+            setView('events');
+            return null;
+          }
+          return prev;
+        });
       }
     };
 
@@ -181,6 +189,7 @@ const SidePanel = () => {
   }, []);
 
   const handleSelectConversation = useCallback((conversationId: string) => {
+    setPendingConversation(conversationId);
     chrome.runtime.sendMessage({ type: 'get_conversation_events', conversationId });
   }, []);
 
@@ -237,24 +246,24 @@ const SidePanel = () => {
             </button>
           )}
           <div className="panel-events">
-          {events.length === 0 && (
-            <div className={`panel-empty ${status === 'connected' ? '' : 'pulse'}`}>
-              {status === 'connected' ? t('emptyConnected') : t('emptyDisconnected')}
-            </div>
-          )}
-          {events.map(event => {
-            const badge = EVENT_TYPE_KEYS[event.type];
-            return (
-              <div key={event.id} className="event-card">
-                <span className="event-badge" style={{ backgroundColor: badge.color }}>
-                  {t(badge.key)}
-                </span>
-                <span className="event-title">{event.title}</span>
-                <span className="event-time">{formatTime(event.timestamp)}</span>
+            {events.length === 0 && (
+              <div className={`panel-empty ${status === 'connected' ? '' : 'pulse'}`}>
+                {status === 'connected' ? t('emptyConnected') : t('emptyDisconnected')}
               </div>
-            );
-          })}
-        </div>
+            )}
+            {events.map(event => {
+              const badge = EVENT_TYPE_KEYS[event.type];
+              return (
+                <div key={event.id} className="event-card">
+                  <span className="event-badge" style={{ backgroundColor: badge.color }}>
+                    {t(badge.key)}
+                  </span>
+                  <span className="event-title">{event.title}</span>
+                  <span className="event-time">{formatTime(event.timestamp)}</span>
+                </div>
+              );
+            })}
+          </div>
         </>
       )}
     </div>
