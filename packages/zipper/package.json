@@ -1,6 +1,6 @@
 {
   "name": "@extension/zipper",
-  "version": "0.1.35",
+  "version": "0.1.36",
   "description": "Wolffish extension - zipper",
   "type": "module",
   "private": true,

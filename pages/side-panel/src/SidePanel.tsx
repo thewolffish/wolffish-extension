@@ -98,6 +98,7 @@ const SidePanel = () => {
   const [, setPendingConversation] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [activeConversation, setActiveConversation] = useState<string | null>(null);
+  const [activeConversationTitle, setActiveConversationTitle] = useState<string | null>(null);
   const [viewingConversation, setViewingConversation] = useState<string | null>(null);
 
   useEffect(() => {
@@ -138,11 +139,17 @@ const SidePanel = () => {
       }
 
       if (payload.event === 'events_sync' && payload.data) {
-        const { conversationId, events: syncEvents } = payload.data as {
+        const {
+          conversationId,
+          title,
+          events: syncEvents,
+        } = payload.data as {
           conversationId: string;
+          title?: string;
           events: EventEntry[];
         };
         setActiveConversation(conversationId);
+        setActiveConversationTitle(title ?? null);
         setViewingConversation(null);
         setView('events');
         setEvents(syncEvents.slice().reverse());
@@ -197,7 +204,10 @@ const SidePanel = () => {
 
   const displayConversation = viewingConversation ?? activeConversation;
   const rawTitle =
-    conversations.find(c => c.conversationId === displayConversation)?.title ?? displayConversation ?? '';
+    conversations.find(c => c.conversationId === displayConversation)?.title ??
+    (displayConversation === activeConversation ? activeConversationTitle : null) ??
+    displayConversation ??
+    '';
   const displayTitle = t(rawTitle as never) || rawTitle;
 
   return (
