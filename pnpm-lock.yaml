@@ -386,7 +386,7 @@ importers:
         specifier: workspace:*
         version: link:../../packages/vite-config
 
-  pages/popup:
+  pages/side-panel:
     dependencies:
       '@extension/i18n':
         specifier: workspace:*

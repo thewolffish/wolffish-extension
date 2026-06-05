@@ -1,6 +1,6 @@
 {
   "name": "@extension/env",
-  "version": "0.1.30",
+  "version": "0.1.32",
   "description": "Wolffish extension - environment",
   "type": "module",
   "private": true,

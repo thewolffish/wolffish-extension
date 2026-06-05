@@ -1,6 +1,6 @@
 {
   "name": "@extension/e2e",
-  "version": "0.1.30",
+  "version": "0.1.32",
   "description": "Wolffish extension - E2E tests",
   "private": true,
   "sideEffects": false,

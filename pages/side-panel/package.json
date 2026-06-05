@@ -1,6 +1,6 @@
 {
   "name": "@wolffish/side-panel",
-  "version": "0.1.30",
+  "version": "0.1.32",
   "description": "Wolffish extension - side panel",
   "type": "module",
   "private": true,
