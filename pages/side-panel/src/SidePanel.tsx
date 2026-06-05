@@ -27,7 +27,9 @@ const EVENT_TYPE_KEYS = {
   cookie: { key: 'eventTypeCookie', color: '#6366F1' },
   wait: { key: 'eventTypeWait', color: '#14B8A6' },
   screenshot: { key: 'eventTypeSnap', color: '#F97316' },
+  scroll: { key: 'eventTypeScroll', color: '#A78BFA' },
   download: { key: 'eventTypeDl', color: '#06B6D4' },
+  unknown: { key: 'eventTypeUnknown', color: '#6B7280' },
 } as const;
 
 type EventType = keyof typeof EVENT_TYPE_KEYS;
@@ -227,14 +229,14 @@ const SidePanel = () => {
           )}
         </div>
       ) : (
-        <div className="panel-events">
+        <>
           {displayConversation && (
             <button className="conversation-bar" onClick={handleOpenConversations}>
               <span className="conversation-bar-chevron">{dir === 'rtl' ? '›' : '‹'}</span>
               <span className="conversation-bar-name">{displayTitle}</span>
             </button>
           )}
-
+          <div className="panel-events">
           {events.length === 0 && (
             <div className={`panel-empty ${status === 'connected' ? '' : 'pulse'}`}>
               {status === 'connected' ? t('emptyConnected') : t('emptyDisconnected')}
@@ -253,6 +255,7 @@ const SidePanel = () => {
             );
           })}
         </div>
+        </>
       )}
     </div>
   );
