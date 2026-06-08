@@ -524,30 +524,49 @@ const handleWaitForNavigation = async (params: Record<string, unknown>): Promise
   const { timeout } = params as unknown as BrowserWaitForNavigationParams;
   const tabId = await resolveTabId(params as { tabId?: number });
   const timeoutMs = timeout ?? COMMAND_TIMEOUT_MS;
+  const startUrl = await api.tabs
+    .get(tabId)
+    .then(t => t.url || '')
+    .catch(() => '');
 
-  return new Promise<BrowserWaitForNavigationResult>((resolve, reject) => {
+  return new Promise<BrowserWaitForNavigationResult>(resolve => {
+    let settled = false;
+    const finish = (url: string, title: string) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      api.webNavigation.onCompleted.removeListener(navListener);
+      api.tabs.onUpdated.removeListener(updateListener);
+      resolve({ url, title });
+    };
+
     const timer = setTimeout(() => {
-      api.webNavigation.onCompleted.removeListener(listener);
-      reject(new Error(`waitForNavigation timed out after ${timeoutMs}ms`));
+      api.tabs
+        .get(tabId)
+        .then(tab => finish(tab.url || '', tab.title || ''))
+        .catch(() => finish(startUrl, ''));
     }, timeoutMs);
 
-    const listener = (details: chrome.webNavigation.WebNavigationFramedCallbackDetails) => {
+    const navListener = (details: chrome.webNavigation.WebNavigationFramedCallbackDetails) => {
       if (details.tabId === tabId && details.frameId === 0) {
-        clearTimeout(timer);
-        api.webNavigation.onCompleted.removeListener(listener);
-
         api.tabs
           .get(tabId)
-          .then(tab => {
-            resolve({ url: tab.url || details.url, title: tab.title || '' });
-          })
-          .catch(err => {
-            reject(err);
-          });
+          .then(tab => finish(tab.url || details.url, tab.title || ''))
+          .catch(() => finish(details.url, ''));
       }
     };
 
-    api.webNavigation.onCompleted.addListener(listener);
+    const updateListener = (updatedTabId: number, info: chrome.tabs.TabChangeInfo) => {
+      if (updatedTabId === tabId && info.url && info.url !== startUrl) {
+        api.tabs
+          .get(tabId)
+          .then(tab => finish(tab.url || info.url!, tab.title || ''))
+          .catch(() => finish(info.url!, ''));
+      }
+    };
+
+    api.webNavigation.onCompleted.addListener(navListener);
+    api.tabs.onUpdated.addListener(updateListener);
   });
 };
 
