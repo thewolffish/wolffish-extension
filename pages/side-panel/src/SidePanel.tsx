@@ -207,10 +207,12 @@ const SidePanel = () => {
   const logoUrl = chrome.runtime.getURL('side-panel/wolffish-logo.png');
 
   const displayConversation = viewingConversation ?? activeConversation;
+  const listTitle = conversations.find(c => c.conversationId === displayConversation)?.title;
   const rawTitle =
-    conversations.find(c => c.conversationId === displayConversation)?.title ??
-    activeConversationTitle ??
-    displayConversation ??
+    (displayConversation === activeConversation && activeConversationTitle) ||
+    (listTitle && listTitle !== 'Untitled' ? listTitle : null) ||
+    activeConversationTitle ||
+    displayConversation ||
     '';
   const displayTitle = t(rawTitle as never) || rawTitle;
 

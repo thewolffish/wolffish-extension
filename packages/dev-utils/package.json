@@ -1,6 +1,6 @@
 {
   "name": "@extension/dev-utils",
-  "version": "0.1.43",
+  "version": "0.1.44",
   "description": "Wolffish extension - dev utils",
   "type": "module",
   "private": true,
