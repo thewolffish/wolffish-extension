@@ -6,6 +6,7 @@ import {
   WolffishCommands,
   CONTENT_SCRIPT_COMMANDS,
   SERVICE_WORKER_COMMANDS,
+  DEBUGGER_ROUTABLE_COMMANDS,
   log,
   logError,
   sendToContentScript,
@@ -60,6 +61,19 @@ import type {
   BrowserGetUrlResult,
   ConnectionStatus,
 } from '@extension/shared';
+import {
+  handleDebuggerAttach,
+  handleDebuggerDetach,
+  handleDebuggerStatus,
+  handleCDPClick,
+  handleCDPType,
+  handleCDPScroll,
+  handleCDPHover,
+  handleCDPKeypress,
+  handleMouseMove,
+  getDebuggerState,
+} from './debugger.js';
+import { handleHumanize } from './humanize-actions.js';
 
 const api = globalThis.chrome;
 
@@ -588,6 +602,19 @@ const SERVICE_WORKER_HANDLERS: Record<string, (params: Record<string, unknown>) 
   [WolffishCommands.BROWSER_WAIT_FOR_NAVIGATION]: handleWaitForNavigation,
   [WolffishCommands.BROWSER_NOTIFY]: handleNotify,
   [WolffishCommands.BROWSER_GET_URL]: handleGetUrl,
+  [WolffishCommands.DEBUGGER_ATTACH]: handleDebuggerAttach,
+  [WolffishCommands.DEBUGGER_DETACH]: handleDebuggerDetach,
+  [WolffishCommands.DEBUGGER_STATUS]: handleDebuggerStatus,
+  [WolffishCommands.BROWSER_MOUSE_MOVE]: handleMouseMove,
+  [WolffishCommands.HUMANIZE]: handleHumanize,
+};
+
+const CDP_HANDLERS: Record<string, (params: Record<string, unknown>) => Promise<unknown>> = {
+  [WolffishCommands.BROWSER_CLICK]: handleCDPClick,
+  [WolffishCommands.BROWSER_TYPE]: handleCDPType,
+  [WolffishCommands.BROWSER_SCROLL]: handleCDPScroll,
+  [WolffishCommands.BROWSER_HOVER]: handleCDPHover,
+  [WolffishCommands.BROWSER_KEYPRESS]: handleCDPKeypress,
 };
 
 // ─── Response Relay ─────────────────────────────────────────────────────────
@@ -613,6 +640,24 @@ const handleCommand = async (command: WolffishCommand): Promise<void> => {
         response = makeResponse(command.id, data);
       }
     } else if (CONTENT_SCRIPT_COMMANDS.has(command.type)) {
+      // CDP routing: if debugger is attached and this is an interaction command, use CDP
+      const debuggerState = getDebuggerState();
+      if (debuggerState.attached && DEBUGGER_ROUTABLE_COMMANDS.has(command.type)) {
+        const cdpHandler = CDP_HANDLERS[command.type];
+        if (cdpHandler) {
+          try {
+            const data = await withTimeout(cdpHandler(command.params));
+            response = makeResponse(command.id, data);
+            log('→', command.type, 'success (CDP)');
+            sendResponseToServer(response);
+            return;
+          } catch (cdpErr) {
+            log('CDP fallback:', command.type, cdpErr instanceof Error ? cdpErr.message : String(cdpErr));
+            // Fall through to content script path
+          }
+        }
+      }
+
       const tabId = await resolveTabId(command.params as { tabId?: number });
       await ensureContentScriptInjected(tabId);
 

@@ -66,6 +66,17 @@ export const WolffishCommands = {
 
   // Notifications
   BROWSER_NOTIFY: 'browser_notify',
+
+  // Debugger Mode
+  DEBUGGER_ATTACH: 'browser_debugger_attach',
+  DEBUGGER_DETACH: 'browser_debugger_detach',
+  DEBUGGER_STATUS: 'browser_debugger_status',
+
+  // Mouse Move
+  BROWSER_MOUSE_MOVE: 'browser_mouse_move',
+
+  // Humanize
+  HUMANIZE: 'browser_humanize',
 } as const;
 
 export type WolffishCommandType = (typeof WolffishCommands)[keyof typeof WolffishCommands];
@@ -118,4 +129,17 @@ export const SERVICE_WORKER_COMMANDS: Set<string> = new Set([
   WolffishCommands.BROWSER_WAIT_FOR_NAVIGATION,
   WolffishCommands.BROWSER_NOTIFY,
   WolffishCommands.BROWSER_GET_URL,
+  WolffishCommands.DEBUGGER_ATTACH,
+  WolffishCommands.DEBUGGER_DETACH,
+  WolffishCommands.DEBUGGER_STATUS,
+  WolffishCommands.BROWSER_MOUSE_MOVE,
+  WolffishCommands.HUMANIZE,
+]);
+
+export const DEBUGGER_ROUTABLE_COMMANDS: Set<string> = new Set([
+  WolffishCommands.BROWSER_CLICK,
+  WolffishCommands.BROWSER_TYPE,
+  WolffishCommands.BROWSER_SCROLL,
+  WolffishCommands.BROWSER_HOVER,
+  WolffishCommands.BROWSER_KEYPRESS,
 ]);

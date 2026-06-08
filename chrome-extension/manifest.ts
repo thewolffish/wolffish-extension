@@ -29,6 +29,7 @@ const manifest = {
     'clipboardWrite',
     'webNavigation',
     'sidePanel',
+    'debugger',
   ],
   background: {
     service_worker: 'background.js',

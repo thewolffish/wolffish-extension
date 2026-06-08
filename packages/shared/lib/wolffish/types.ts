@@ -453,3 +453,49 @@ export interface BrowserNotifyParams {
 export interface BrowserNotifyResult {
   notificationId: string;
 }
+
+// ─── Debugger Mode ──────────────────────────────────────────────────────────
+
+export interface DebuggerAttachParams {
+  tabId: number;
+}
+
+export interface DebuggerAttachResult {
+  success: boolean;
+  tabId: number;
+}
+
+export interface DebuggerDetachResult {
+  success: boolean;
+}
+
+export interface DebuggerStatusResult {
+  attached: boolean;
+  tabId: number | null;
+}
+
+// ─── Mouse Move ─────────────────────────────────────────────────────────────
+
+export interface BrowserMouseMoveParams {
+  x: number;
+  y: number;
+  tabId?: number;
+}
+
+export interface BrowserMouseMoveResult {
+  success: boolean;
+}
+
+// ─── Humanize ───────────────────────────────────────────────────────────────
+
+export type HumanizeIntensity = 'light' | 'moderate' | 'heavy';
+
+export interface HumanizeParams {
+  intensity?: HumanizeIntensity;
+  tabId?: number;
+}
+
+export interface HumanizeResult {
+  action: string;
+  duration_ms: number;
+}
