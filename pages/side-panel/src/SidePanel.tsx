@@ -140,6 +140,7 @@ const SidePanel = () => {
 
       if (payload.event === 'event_logged' && payload.data) {
         setEvents(prev => [payload.data as EventEntry, ...prev]);
+        setView('events');
       }
 
       if (payload.event === 'events_sync' && payload.data) {
@@ -156,7 +157,9 @@ const SidePanel = () => {
         setActiveConversationTitle(title ?? null);
         setViewingConversation(null);
         setView('events');
-        setEvents(syncEvents.slice().reverse());
+        if (syncEvents.length > 0) {
+          setEvents(syncEvents.slice().reverse());
+        }
       }
 
       if (payload.event === 'conversations_list' && payload.data) {
