@@ -161,22 +161,24 @@ export const handleCDPClick = async (
       if (!el) return null;
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       const rect = el.getBoundingClientRect();
+      const anchor = el.closest('a');
       return {
         x: Math.round(rect.left + rect.width / 2),
         y: Math.round(rect.top + rect.height / 2),
+        href: anchor?.href || null,
       };
     },
     args: [selector],
     world: 'MAIN' as chrome.scripting.ExecutionWorld,
   });
 
-  const coords = result[0]?.result as { x: number; y: number } | null;
-  if (!coords) throw new Error(`Element not found: ${selector}`);
+  const info = result[0]?.result as { x: number; y: number; href: string | null } | null;
+  if (!info) throw new Error(`Element not found: ${selector}`);
 
   await sleep(gaussianDelay(50, 150));
 
   const steps = gaussianDelay(10, 20);
-  const path = generateBezierPath(cursorX, cursorY, coords.x, coords.y, steps);
+  const path = generateBezierPath(cursorX, cursorY, info.x, info.y, steps);
   for (const point of path) {
     await sendCDP('Input.dispatchMouseEvent', {
       type: 'mouseMoved',
@@ -186,13 +188,13 @@ export const handleCDPClick = async (
     await sleep(gaussianDelay(5, 15));
   }
 
-  cursorX = coords.x;
-  cursorY = coords.y;
+  cursorX = info.x;
+  cursorY = info.y;
 
   await sendCDP('Input.dispatchMouseEvent', {
     type: 'mousePressed',
-    x: coords.x,
-    y: coords.y,
+    x: info.x,
+    y: info.y,
     button: 'left',
     clickCount: 1,
   });
@@ -201,11 +203,27 @@ export const handleCDPClick = async (
 
   await sendCDP('Input.dispatchMouseEvent', {
     type: 'mouseReleased',
-    x: coords.x,
-    y: coords.y,
+    x: info.x,
+    y: info.y,
     button: 'left',
     clickCount: 1,
   });
+
+  // Fallback: if the clicked element is inside an <a> with href,
+  // dispatch a real DOM click to ensure navigation triggers
+  if (info.href) {
+    await sleep(200);
+    await api.scripting.executeScript({
+      target: { tabId },
+      func: (sel: string) => {
+        const el = document.querySelector(sel);
+        const anchor = el?.closest('a');
+        if (anchor) anchor.click();
+      },
+      args: [selector],
+      world: 'MAIN' as chrome.scripting.ExecutionWorld,
+    });
+  }
 
   return { success: true, elementFound: true };
 };

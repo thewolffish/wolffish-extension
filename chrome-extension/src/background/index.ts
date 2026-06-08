@@ -742,6 +742,7 @@ const cache = {
 let cachedEvents: CachedEvent[] = [];
 let cachedConversations: CachedConversation[] = [];
 let activeConversationId: string | null = null;
+let activeConversationTitle: string | null = null;
 let cacheRestored = false;
 
 const handleWolffishEvent = (event: { type: 'event'; event: string; data: unknown }): void => {
@@ -759,8 +760,9 @@ const handleWolffishEvent = (event: { type: 'event'; event: string; data: unknow
   }
 
   if (event.event === 'events_sync') {
-    const data = event.data as { conversationId: string; events: CachedEvent[] };
+    const data = event.data as { conversationId: string; title?: string; events: CachedEvent[] };
     activeConversationId = data.conversationId;
+    activeConversationTitle = data.title ?? null;
     cachedEvents = (data.events ?? []).slice().reverse();
     cache.saveActive(activeConversationId);
     cache.saveEvents(activeConversationId, cachedEvents);
@@ -820,6 +822,7 @@ api.runtime.onMessage.addListener((message: { type?: string; conversationId?: st
         events: cachedEvents,
         conversations: cachedConversations,
         activeConversation: activeConversationId,
+        activeConversationTitle,
       });
     } else {
       // Service worker just restarted — load from storage
@@ -831,6 +834,7 @@ api.runtime.onMessage.addListener((message: { type?: string; conversationId?: st
           events: cachedEvents,
           conversations: cachedConversations,
           activeConversation: activeConversationId,
+          activeConversationTitle,
         });
         // Also emit so the side panel listener picks it up
         api.runtime

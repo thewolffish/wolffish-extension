@@ -118,11 +118,13 @@ const SidePanel = () => {
         events?: EventEntry[];
         conversations?: ConversationSummary[];
         activeConversation?: string | null;
+        activeConversationTitle?: string | null;
       }) => {
         if (response?.events?.length) setEvents(response.events);
         if (response?.conversations?.length) setConversations(response.conversations);
         if (response?.activeConversation) {
           setActiveConversation(response.activeConversation);
+          setActiveConversationTitle(response.activeConversationTitle ?? null);
         }
       },
     );
@@ -205,12 +207,12 @@ const SidePanel = () => {
   const logoUrl = chrome.runtime.getURL('side-panel/wolffish-logo.png');
 
   const displayConversation = viewingConversation ?? activeConversation;
-  const resolvedTitle =
+  const rawTitle =
     conversations.find(c => c.conversationId === displayConversation)?.title ??
-    (displayConversation === activeConversation ? activeConversationTitle : null);
-  const isUuid = !resolvedTitle || /^[0-9a-f-]{20,}$/i.test(resolvedTitle);
-  const rawTitle = isUuid ? '' : resolvedTitle;
-  const displayTitle = (rawTitle && (t(rawTitle as never) || rawTitle)) || (displayConversation ? '...' : '');
+    activeConversationTitle ??
+    displayConversation ??
+    '';
+  const displayTitle = t(rawTitle as never) || rawTitle;
 
   return (
     <div className={`panel ${theme}`} dir={dir}>
