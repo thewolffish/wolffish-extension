@@ -29,6 +29,8 @@ const EVENT_TYPE_KEYS = {
   screenshot: { key: 'eventTypeSnap', color: '#F97316' },
   scroll: { key: 'eventTypeScroll', color: '#A78BFA' },
   download: { key: 'eventTypeDl', color: '#06B6D4' },
+  debugger: { key: 'eventTypeDebug', color: '#DC2626' },
+  move: { key: 'eventTypeMove', color: '#84CC16' },
   unknown: { key: 'eventTypeUnknown', color: '#6B7280' },
 } as const;
 
@@ -203,12 +205,12 @@ const SidePanel = () => {
   const logoUrl = chrome.runtime.getURL('side-panel/wolffish-logo.png');
 
   const displayConversation = viewingConversation ?? activeConversation;
-  const rawTitle =
+  const resolvedTitle =
     conversations.find(c => c.conversationId === displayConversation)?.title ??
-    (displayConversation === activeConversation ? activeConversationTitle : null) ??
-    displayConversation ??
-    '';
-  const displayTitle = t(rawTitle as never) || rawTitle;
+    (displayConversation === activeConversation ? activeConversationTitle : null);
+  const isUuid = !resolvedTitle || /^[0-9a-f-]{20,}$/i.test(resolvedTitle);
+  const rawTitle = isUuid ? '' : resolvedTitle;
+  const displayTitle = (rawTitle && (t(rawTitle as never) || rawTitle)) || (displayConversation ? '...' : '');
 
   return (
     <div className={`panel ${theme}`} dir={dir}>

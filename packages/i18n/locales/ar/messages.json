@@ -23,6 +23,8 @@
   "eventTypeSnap": { "message": "لقطة" },
   "eventTypeScroll": { "message": "تمرير" },
   "eventTypeDl": { "message": "تحميل" },
+  "eventTypeDebug": { "message": "مصحح" },
+  "eventTypeMove": { "message": "تحريك" },
   "eventTypeUnknown": { "message": "أخرى" },
   "sampleNavigate": { "message": "انتقل إلى $1", "placeholders": { "1": { "content": "$1" } } },
   "sampleClick": { "message": "نقر على $1", "placeholders": { "1": { "content": "$1" } } },
@@ -31,7 +33,10 @@
   "sampleTab": { "message": "$1", "placeholders": { "1": { "content": "$1" } } },
   "sampleScreenshot": { "message": "التقط $1", "placeholders": { "1": { "content": "$1" } } },
   "sampleScript": { "message": "نفّذ $1", "placeholders": { "1": { "content": "$1" } } },
-  "sampleCookie": { "message": "$1 كوكيز لـ $2", "placeholders": { "1": { "content": "$1" }, "2": { "content": "$2" } } },
+  "sampleCookie": {
+    "message": "$1 كوكيز لـ $2",
+    "placeholders": { "1": { "content": "$1" }, "2": { "content": "$2" } }
+  },
   "sampleWait": { "message": "انتظر $1", "placeholders": { "1": { "content": "$1" } } },
   "sampleDownload": { "message": "حمّل $1", "placeholders": { "1": { "content": "$1" } } },
   "displayErrorInfo": { "message": "حدث خطأ" },

@@ -1,6 +1,9 @@
 {
   "extensionName": { "description": "Extension name", "message": "Wolffish" },
-  "extensionDescription": { "description": "Extension description", "message": "Browser capability for the Wolffish AI agent" },
+  "extensionDescription": {
+    "description": "Extension description",
+    "message": "Browser capability for the Wolffish AI agent"
+  },
   "bidiDir": { "message": "ltr" },
   "locale": { "message": "en" },
   "statusConnected": { "message": "Connected" },
@@ -17,6 +20,8 @@
   "eventTypeSnap": { "message": "SNAP" },
   "eventTypeScroll": { "message": "SCROLL" },
   "eventTypeDl": { "message": "DL" },
+  "eventTypeDebug": { "message": "DEBUG" },
+  "eventTypeMove": { "message": "MOVE" },
   "eventTypeUnknown": { "message": "OTHER" },
   "sampleNavigate": { "message": "Navigated to $1", "placeholders": { "1": { "content": "$1" } } },
   "sampleClick": { "message": "Clicked $1", "placeholders": { "1": { "content": "$1" } } },
@@ -25,7 +30,10 @@
   "sampleTab": { "message": "$1", "placeholders": { "1": { "content": "$1" } } },
   "sampleScreenshot": { "message": "Captured $1", "placeholders": { "1": { "content": "$1" } } },
   "sampleScript": { "message": "Executed $1", "placeholders": { "1": { "content": "$1" } } },
-  "sampleCookie": { "message": "$1 cookie for $2", "placeholders": { "1": { "content": "$1" }, "2": { "content": "$2" } } },
+  "sampleCookie": {
+    "message": "$1 cookie for $2",
+    "placeholders": { "1": { "content": "$1" }, "2": { "content": "$2" } }
+  },
   "sampleWait": { "message": "Waited for $1", "placeholders": { "1": { "content": "$1" } } },
   "sampleDownload": { "message": "Downloaded $1", "placeholders": { "1": { "content": "$1" } } },
   "extensionTest": { "message": "Extension Test" },

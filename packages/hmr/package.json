@@ -1,6 +1,6 @@
 {
   "name": "@extension/hmr",
-  "version": "0.1.39",
+  "version": "0.1.40",
   "description": "Wolffish extension - hot module reload",
   "type": "module",
   "private": true,
