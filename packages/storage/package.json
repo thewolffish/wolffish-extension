@@ -1,6 +1,6 @@
 {
   "name": "@extension/storage",
-  "version": "0.1.44",
+  "version": "0.1.45",
   "description": "Wolffish extension - storage",
   "type": "module",
   "private": true,

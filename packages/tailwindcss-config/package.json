@@ -1,6 +1,6 @@
 {
   "name": "@extension/tailwindcss-config",
-  "version": "0.1.44",
+  "version": "0.1.45",
   "description": "Wolffish extension - Tailwind CSS config",
   "main": "tailwind.config.ts",
   "private": true,
