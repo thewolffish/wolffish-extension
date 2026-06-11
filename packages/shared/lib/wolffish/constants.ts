@@ -12,8 +12,11 @@ export const COMMAND_TIMEOUT_MS = 30000;
 
 export const CONTENT_SCRIPT_PING_TIMEOUT_MS = 500;
 export const ELEMENT_SCROLL_SETTLE_MS = 100;
-export const HUMANIZE_MIN_DELAY_MS = 30;
-export const HUMANIZE_MAX_DELAY_MS = 100;
+// Per-keystroke jitter for humanized typing. Small enough that long text
+// (e.g. a multi-paragraph post body) finishes in a few seconds, large enough
+// that keystrokes still arrive as discrete, irregularly-spaced events.
+export const HUMANIZE_MIN_DELAY_MS = 5;
+export const HUMANIZE_MAX_DELAY_MS = 20;
 export const HUMANIZE_CLICK_MIN_DELAY_MS = 50;
 export const HUMANIZE_CLICK_MAX_DELAY_MS = 150;
 

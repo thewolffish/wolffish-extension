@@ -1,3 +1,5 @@
+import { HUMANIZE_MIN_DELAY_MS, HUMANIZE_MAX_DELAY_MS } from '@extension/shared';
+
 const randomDelay = (min: number, max: number): number => Math.floor(Math.random() * (max - min + 1)) + min;
 
 const sleep = async (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
@@ -37,7 +39,11 @@ const humanizedType = async (element: HTMLElement, text: string, clearFirst: boo
     element.dispatchEvent(new Event('input', { bubbles: true }));
     element.dispatchEvent(new KeyboardEvent('keyup', eventInit));
 
-    await sleep(randomDelay(30, 100));
+    // Per-key jitter, kept small. Every character still fires real discrete
+    // keydown/keypress/input/keyup events (that's what makes it look typed
+    // rather than pasted) — but at ~5-20ms apart instead of 30-100ms, so a
+    // multi-paragraph body lands in a few seconds, not a minute-and-a-half.
+    await sleep(randomDelay(HUMANIZE_MIN_DELAY_MS, HUMANIZE_MAX_DELAY_MS));
   }
 
   element.dispatchEvent(new Event('change', { bubbles: true }));

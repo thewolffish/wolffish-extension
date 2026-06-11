@@ -1,4 +1,4 @@
-import { LOG_PREFIX, CONTENT_SCRIPT_PING_TIMEOUT_MS, COMMAND_TIMEOUT_MS } from './constants.js';
+import { LOG_PREFIX, CONTENT_SCRIPT_PING_TIMEOUT_MS } from './constants.js';
 import type { InternalMessage, WolffishResponse } from './types.js';
 
 const api = globalThis.chrome ?? (globalThis as Record<string, unknown>).browser;
@@ -73,13 +73,13 @@ const resolveTabId = async (params: { tabId?: number }): Promise<number> => {
   return tabs[0].id!;
 };
 
-const withTimeout = <T>(promise: Promise<T>, ms: number = COMMAND_TIMEOUT_MS): Promise<T> =>
-  Promise.race([
-    promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`Timeout: command did not complete within ${ms}ms`)), ms),
-    ),
-  ]);
+// Command execution is intentionally unbounded. Long operations — chiefly
+// humanized typing of large text — must never be killed by a timer. This is
+// safe because a stalled command can't strand silently: the service worker
+// pings the content script before every dispatch, and the app server rejects
+// all pending commands when the socket closes. So the only thing removed here
+// is the arbitrary "took too long" cap that used to truncate legitimate work.
+const withTimeout = <T>(promise: Promise<T>): Promise<T> => promise;
 
 const makeResponse = (id: string, data: unknown): WolffishResponse => ({ id, success: true, data });
 
