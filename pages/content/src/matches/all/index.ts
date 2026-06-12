@@ -9,16 +9,73 @@ log('Content script loaded');
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-const findElement = (selector: string): HTMLElement => {
-  const el = document.querySelector(selector);
-  if (!el) throw new Error(`Element not found: ${selector}`);
-  return el as HTMLElement;
-};
-
 const isVisible = (el: HTMLElement): boolean => {
   if (el.offsetParent !== null) return true;
   const style = getComputedStyle(el);
   return style.display !== 'none' && style.visibility !== 'hidden';
+};
+
+/**
+ * Playwright-style `text=` selector. Agent models produce these reflexively
+ * because the playwright twin tools accept them — observed live on
+ * 2026-06-12 (`text=join`, `text=78 comments`), each burning three motor
+ * retries as a querySelector SyntaxError. Resolves to the deepest visible
+ * element whose whitespace-normalized text matches: exact match beats
+ * substring, both case-insensitive; earlier in document order wins ties.
+ * Returns null when nothing visible matches.
+ */
+const findByText = (raw: string): HTMLElement | null => {
+  const normalize = (s: string): string => s.replace(/\s+/g, ' ').trim().toLowerCase();
+  const needle = normalize(raw.replace(/^(["'])(.*)\1$/s, '$2'));
+  if (!needle) return null;
+
+  const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE']);
+  const exact: HTMLElement[] = [];
+  const partial: HTMLElement[] = [];
+  const all = document.body ? Array.from(document.body.getElementsByTagName('*')) : [];
+  for (const node of all) {
+    const el = node as HTMLElement;
+    if (SKIP.has(el.tagName)) continue;
+    const text = normalize(el.textContent ?? '');
+    // Anything much longer than the needle is a container, not a target.
+    if (!text || text.length > needle.length + 200) continue;
+    if (text === needle) exact.push(el);
+    else if (text.includes(needle)) partial.push(el);
+  }
+
+  const pool = exact.length > 0 ? exact : partial;
+  // Deepest match only — clicking the innermost node still bubbles to the
+  // ancestor link/button, while clicking a matched container would not
+  // necessarily hit the control the model meant.
+  const deepest = pool.filter(el => !pool.some(other => other !== el && el.contains(other)));
+  return deepest.find(isVisible) ?? null;
+};
+
+/**
+ * Selector resolution for every selector-taking command. CSS by default;
+ * `text=` falls through to findByText. Invalid CSS is rethrown with
+ * phrasing the motor's error classifier treats as a deterministic
+ * validation failure — the raw "Failed to execute 'querySelector'"
+ * SyntaxError classifies as retryable-unknown and burns three attempts
+ * on a selector that can never work.
+ */
+const querySelectorSafe = (selector: string): HTMLElement | null => {
+  if (selector.startsWith('text=')) {
+    return findByText(selector.slice('text='.length));
+  }
+  try {
+    return document.querySelector(selector) as HTMLElement | null;
+  } catch {
+    throw new Error(
+      `selector syntax is incorrect: '${selector}' is not valid CSS. Use a CSS selector, or text=<visible text> to target by text.`,
+    );
+  }
+};
+
+const findElement = (selector: string): HTMLElement => {
+  const el = querySelectorSafe(selector);
+  if (!el) throw new Error(`Element not found: ${selector}`);
+  return el;
 };
 
 // ─── Page Interaction Handlers ──────────────────────────────────────────────
@@ -371,7 +428,7 @@ const handleWaitFor = async (params: Record<string, unknown>) => {
   const start = Date.now();
 
   const check = (): boolean => {
-    const el = document.querySelector(selector) as HTMLElement | null;
+    const el = querySelectorSafe(selector);
     if (!el) return false;
     if (requireVisible && !isVisible(el)) return false;
     return true;
