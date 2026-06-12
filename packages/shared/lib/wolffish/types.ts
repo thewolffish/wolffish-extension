@@ -414,6 +414,28 @@ export interface BrowserExecuteJsResult {
 
 // ─── Wait & Polling ──────────────────────────────────────────────────────────
 
+/**
+ * Generic wait. Accepts the loose shapes agent models actually produce
+ * (observed in the wild: `{type: 'selector', selector, timeout_ms}` —
+ * the schema of the playwright twin tool). `type` is inferred when
+ * omitted: a selector means "wait for element", nothing means "sleep".
+ */
+export interface BrowserWaitParams {
+  type?: 'selector' | 'navigation' | 'network_idle' | 'timeout';
+  selector?: string;
+  /** Sleep duration for plain waits. */
+  ms?: number;
+  /** Max wait time — accepted under either name. */
+  timeout_ms?: number;
+  timeout?: number;
+  visible?: boolean;
+  tabId?: number;
+}
+
+export interface BrowserWaitSleepResult {
+  waited: number;
+}
+
 export interface BrowserWaitForParams {
   selector: string;
   timeout?: number;

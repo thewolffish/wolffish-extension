@@ -15,6 +15,7 @@ import {
   withTimeout,
   makeResponse,
   makeErrorResponse,
+  generateId,
   isFirefox,
 } from '@extension/shared';
 import { wolffishConnectionStorage } from '@extension/storage';
@@ -53,6 +54,7 @@ import type {
   BrowserDownloadResult,
   BrowserExecuteJsParams,
   BrowserExecuteJsResult,
+  BrowserWaitParams,
   BrowserWaitForNavigationParams,
   BrowserWaitForNavigationResult,
   BrowserNotifyParams,
@@ -205,29 +207,36 @@ const handleNavigate = async (params: Record<string, unknown>): Promise<BrowserN
   const { url, waitUntil } = params as unknown as BrowserNavigateParams;
   const tabId = await resolveTabId(params as { tabId?: number });
 
-  if (waitUntil) {
-    const navigationPromise = new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        api.webNavigation.onCompleted.removeListener(listener);
+  // Always wait for the navigation to commit before reading the tab back.
+  // chrome.tabs.update resolves the instant navigation is *initiated*, so a
+  // bare update()+get() returns the PREVIOUS page's url/title — an off-by-one
+  // that made every navigate result look stale. Register the onCompleted
+  // listener before calling update to avoid a fire-before-listen race. When
+  // the caller passed an explicit waitUntil we reject on timeout; otherwise we
+  // resolve best-effort after the timeout and report whatever the tab settled on.
+  const navigationPromise = new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      api.webNavigation.onCompleted.removeListener(listener);
+      if (waitUntil) {
         reject(new Error(`Navigation timed out waiting for '${waitUntil}'`));
-      }, COMMAND_TIMEOUT_MS);
+      } else {
+        resolve();
+      }
+    }, COMMAND_TIMEOUT_MS);
 
-      const listener = (details: chrome.webNavigation.WebNavigationFramedCallbackDetails) => {
-        if (details.tabId === tabId && details.frameId === 0) {
-          clearTimeout(timeout);
-          api.webNavigation.onCompleted.removeListener(listener);
-          resolve();
-        }
-      };
+    const listener = (details: chrome.webNavigation.WebNavigationFramedCallbackDetails) => {
+      if (details.tabId === tabId && details.frameId === 0) {
+        clearTimeout(timeout);
+        api.webNavigation.onCompleted.removeListener(listener);
+        resolve();
+      }
+    };
 
-      api.webNavigation.onCompleted.addListener(listener);
-    });
+    api.webNavigation.onCompleted.addListener(listener);
+  });
 
-    await api.tabs.update(tabId, { url });
-    await navigationPromise;
-  } else {
-    await api.tabs.update(tabId, { url });
-  }
+  await api.tabs.update(tabId, { url });
+  await navigationPromise;
 
   const tab = await api.tabs.get(tabId);
   return { url: tab.url || url, title: tab.title || '', tabId };
@@ -570,6 +579,59 @@ const handleWaitForNavigation = async (params: Record<string, unknown>): Promise
   });
 };
 
+// Plain sleeps are capped so a bad argument can't park the command queue
+// for an hour. Multi-minute waits survive MV3 service-worker idling
+// because the WebSocket heartbeat keeps the worker alive.
+const MAX_WAIT_SLEEP_MS = 300_000;
+
+/**
+ * Generic wait — the name agent models guess first, mirroring the
+ * playwright capability's browser_wait (observed live: a model invented
+ * `ext_wait {type: 'selector', selector, timeout_ms}` and the task lost a
+ * step to "unknown tool"). Dispatches on `type`, inferring it when
+ * omitted: a selector means "wait for element", nothing means "sleep".
+ * Selector and network-idle variants delegate to the existing content
+ * script implementations; navigation reuses the local handler.
+ */
+const handleWait = async (params: Record<string, unknown>): Promise<unknown> => {
+  const p = params as unknown as BrowserWaitParams;
+  const timeoutMs = p.timeout_ms ?? p.timeout ?? p.ms;
+  const kind = p.type ?? (p.selector ? 'selector' : 'timeout');
+
+  if (kind === 'navigation') {
+    return handleWaitForNavigation({ timeout: timeoutMs, tabId: p.tabId });
+  }
+
+  if (kind === 'selector' || kind === 'network_idle') {
+    if (kind === 'selector' && !p.selector) {
+      throw new Error('selector is required for type=selector');
+    }
+    const tabId = await resolveTabId(p as { tabId?: number });
+    await ensureContentScriptInjected(tabId);
+    const payload: WolffishCommand = {
+      id: generateId(),
+      type: kind === 'selector' ? WolffishCommands.BROWSER_WAIT_FOR : WolffishCommands.BROWSER_WAIT_FOR_NETWORK_IDLE,
+      params:
+        kind === 'selector'
+          ? { selector: p.selector, timeout: timeoutMs, visible: p.visible, tabId }
+          : { timeout: timeoutMs, tabId },
+    };
+    const result = (await sendToContentScript(tabId, {
+      source: 'service-worker',
+      target: 'content-script',
+      payload,
+    })) as WolffishResponse;
+    if (!result?.success) {
+      throw new Error(result?.error ?? `${kind} wait failed`);
+    }
+    return result.data;
+  }
+
+  const waited = Math.max(0, Math.min(timeoutMs ?? 1000, MAX_WAIT_SLEEP_MS));
+  await new Promise(resolve => setTimeout(resolve, waited));
+  return { waited };
+};
+
 // ─── Notification Handler ───────────────────────────────────────────────────
 
 const handleNotify = async (params: Record<string, unknown>): Promise<BrowserNotifyResult> => {
@@ -618,6 +680,7 @@ const SERVICE_WORKER_HANDLERS: Record<string, (params: Record<string, unknown>) 
   [WolffishCommands.BROWSER_COOKIES_REMOVE]: handleCookiesRemove,
   [WolffishCommands.BROWSER_DOWNLOAD]: handleDownload,
   [WolffishCommands.BROWSER_EXECUTE_JS]: handleExecuteJs,
+  [WolffishCommands.BROWSER_WAIT]: handleWait,
   [WolffishCommands.BROWSER_WAIT_FOR_NAVIGATION]: handleWaitForNavigation,
   [WolffishCommands.BROWSER_NOTIFY]: handleNotify,
   [WolffishCommands.BROWSER_GET_URL]: handleGetUrl,

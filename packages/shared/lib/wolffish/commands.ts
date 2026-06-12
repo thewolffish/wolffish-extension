@@ -60,6 +60,11 @@ export const WolffishCommands = {
   BROWSER_EXECUTE_JS: 'browser_execute_js',
 
   // Wait & Polling
+  // browser_wait is the generic entry models reach for first (it mirrors
+  // the playwright capability's browser_wait): a plain sleep, or a
+  // selector/navigation/network-idle wait dispatched on `type`. The
+  // specific BROWSER_WAIT_FOR_* commands below remain the primary tools.
+  BROWSER_WAIT: 'browser_wait',
   BROWSER_WAIT_FOR: 'browser_wait_for',
   BROWSER_WAIT_FOR_NAVIGATION: 'browser_wait_for_navigation',
   BROWSER_WAIT_FOR_NETWORK_IDLE: 'browser_wait_for_network_idle',
@@ -126,6 +131,9 @@ export const SERVICE_WORKER_COMMANDS: Set<string> = new Set([
   WolffishCommands.BROWSER_COOKIES_REMOVE,
   WolffishCommands.BROWSER_DOWNLOAD,
   WolffishCommands.BROWSER_EXECUTE_JS,
+  // Service-worker side so a bare sleep works with no page attached; the
+  // selector/network-idle variants delegate to the content script.
+  WolffishCommands.BROWSER_WAIT,
   WolffishCommands.BROWSER_WAIT_FOR_NAVIGATION,
   WolffishCommands.BROWSER_NOTIFY,
   WolffishCommands.BROWSER_GET_URL,
