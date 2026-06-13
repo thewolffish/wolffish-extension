@@ -203,43 +203,83 @@ const sendToServer = (data: unknown): void => {
 
 // ─── Navigation Handlers ────────────────────────────────────────────────────
 
+/**
+ * Wait until a *fresh* navigation in this tab finishes and report the tab's
+ * settled state. `chrome.tabs.update` resolves the instant a navigation is
+ * initiated, so reading the tab back immediately returns the PREVIOUS page —
+ * an off-by-one that makes every navigate result lag one step (observed live:
+ * navigating to a Reddit post reported the prior claude.ai page, which then
+ * made the agent re-navigate two more times chasing a target the tool kept
+ * misreporting). Waiting only for the first `webNavigation.onCompleted` is
+ * also unreliable on redirect chains (e.g. Reddit old<->www while logged in),
+ * where an early event can land mid-redirect.
+ *
+ * So we settle only once the tab has actually begun a new load — observed
+ * either as a `loading` status, a URL that moved off the pre-navigation URL,
+ * or an `onCompleted` for the top frame — AND then reached `status:
+ * 'complete'`. This never returns the stale pre-navigation state, follows
+ * redirects to the final URL, and falls back to whatever the tab settled on
+ * if the timeout fires. `onCompleted` is a wake signal; a poll is the
+ * backstop for fast/cached loads and SPA redirects it can miss.
+ */
+const waitForTabSettled = (tabId: number, beforeUrl: string, timeoutMs: number): Promise<chrome.tabs.Tab | null> =>
+  new Promise(resolve => {
+    let done = false;
+    let navStarted = false;
+
+    const cleanup = (): void => {
+      clearTimeout(timer);
+      clearInterval(poll);
+      api.webNavigation?.onCompleted?.removeListener(onCompleted);
+    };
+    const finish = (tab: chrome.tabs.Tab | null): void => {
+      if (done) return;
+      done = true;
+      cleanup();
+      resolve(tab);
+    };
+
+    const check = async (): Promise<void> => {
+      const tab = await api.tabs.get(tabId).catch(() => null);
+      if (!tab) return;
+      if (tab.status === 'loading' || (tab.url && tab.url !== beforeUrl)) navStarted = true;
+      if (tab.status === 'complete' && navStarted) finish(tab);
+    };
+
+    const onCompleted = (d: chrome.webNavigation.WebNavigationFramedCallbackDetails): void => {
+      if (d.tabId === tabId && d.frameId === 0) {
+        navStarted = true;
+        void check();
+      }
+    };
+
+    api.webNavigation?.onCompleted?.addListener(onCompleted);
+    const poll = setInterval(() => void check(), 100);
+    const timer = setTimeout(() => {
+      api.tabs
+        .get(tabId)
+        .then(finish)
+        .catch(() => finish(null));
+    }, timeoutMs);
+  });
+
 const handleNavigate = async (params: Record<string, unknown>): Promise<BrowserNavigateResult> => {
   const { url, waitUntil } = params as unknown as BrowserNavigateParams;
   const tabId = await resolveTabId(params as { tabId?: number });
 
-  // Always wait for the navigation to commit before reading the tab back.
-  // chrome.tabs.update resolves the instant navigation is *initiated*, so a
-  // bare update()+get() returns the PREVIOUS page's url/title — an off-by-one
-  // that made every navigate result look stale. Register the onCompleted
-  // listener before calling update to avoid a fire-before-listen race. When
-  // the caller passed an explicit waitUntil we reject on timeout; otherwise we
-  // resolve best-effort after the timeout and report whatever the tab settled on.
-  const navigationPromise = new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      api.webNavigation.onCompleted.removeListener(listener);
-      if (waitUntil) {
-        reject(new Error(`Navigation timed out waiting for '${waitUntil}'`));
-      } else {
-        resolve();
-      }
-    }, COMMAND_TIMEOUT_MS);
-
-    const listener = (details: chrome.webNavigation.WebNavigationFramedCallbackDetails) => {
-      if (details.tabId === tabId && details.frameId === 0) {
-        clearTimeout(timeout);
-        api.webNavigation.onCompleted.removeListener(listener);
-        resolve();
-      }
-    };
-
-    api.webNavigation.onCompleted.addListener(listener);
-  });
+  // Snapshot where the tab is *before* navigating so waitForTabSettled can
+  // tell a real commit from a stale read of the page we're leaving.
+  const before = await api.tabs.get(tabId).catch(() => null);
+  const beforeUrl = before?.url ?? '';
 
   await api.tabs.update(tabId, { url });
-  await navigationPromise;
 
-  const tab = await api.tabs.get(tabId);
-  return { url: tab.url || url, title: tab.title || '', tabId };
+  const settled = await waitForTabSettled(tabId, beforeUrl, COMMAND_TIMEOUT_MS);
+  const tab = settled ?? (await api.tabs.get(tabId).catch(() => null));
+  if (waitUntil && (!tab || tab.status !== 'complete')) {
+    throw new Error(`Navigation timed out waiting for '${waitUntil}'`);
+  }
+  return { url: tab?.url || url, title: tab?.title || '', tabId };
 };
 
 const handleBack = async (params: Record<string, unknown>): Promise<{ success: boolean }> => {
