@@ -137,6 +137,23 @@ export interface BrowserFileUploadParams {
   tabId?: number;
 }
 
+export interface BrowserSetValueParams {
+  selector: string;
+  value: string;
+  tabId?: number;
+}
+
+export interface BrowserSetValueResult {
+  success: boolean;
+  value: string;
+}
+
+export interface BrowserSubmitFormParams {
+  /** A selector inside (or of) the form. Omit to submit the focused element's form. */
+  selector?: string;
+  tabId?: number;
+}
+
 // ─── Page Reading ────────────────────────────────────────────────────────────
 
 export interface BrowserReadPageParams {
@@ -506,6 +523,85 @@ export interface BrowserMouseMoveParams {
 
 export interface BrowserMouseMoveResult {
   success: boolean;
+}
+
+// ─── Mouse Interaction ──────────────────────────────────────────────────────
+
+export type MouseButton = 'left' | 'right' | 'middle';
+
+/**
+ * Coordinate- or selector-targeted. Provide `selector` (resolved to the
+ * element's center, scrolled into view) OR explicit `x`/`y` viewport pixels.
+ */
+export interface BrowserMouseClickParams {
+  x?: number;
+  y?: number;
+  selector?: string;
+  button?: MouseButton;
+  /** Double-click instead of single. */
+  double?: boolean;
+  tabId?: number;
+}
+
+export interface BrowserMouseButtonParams {
+  x?: number;
+  y?: number;
+  selector?: string;
+  button?: MouseButton;
+  tabId?: number;
+}
+
+export interface BrowserMouseDragParams {
+  startX?: number;
+  startY?: number;
+  endX?: number;
+  endY?: number;
+  sourceSelector?: string;
+  targetSelector?: string;
+  tabId?: number;
+}
+
+export interface BrowserMouseActionResult {
+  success: boolean;
+  x: number;
+  y: number;
+  /** true when dispatched as trusted CDP input (debugger attached). */
+  trusted: boolean;
+}
+
+// ─── Coordinate ↔ DOM Bridging ──────────────────────────────────────────────
+
+export interface BrowserElementFromPointParams {
+  x: number;
+  y: number;
+  tabId?: number;
+}
+
+export interface BrowserElementFromPointResult {
+  found: boolean;
+  tag?: string;
+  text?: string;
+  attributes?: Record<string, string>;
+  rect?: { x: number; y: number; width: number; height: number };
+}
+
+export interface BrowserInteractiveElementsParams {
+  selector?: string;
+  limit?: number;
+  tabId?: number;
+}
+
+export interface InteractiveElementInfo {
+  tag: string;
+  text: string;
+  role: string;
+  center: { x: number; y: number };
+  rect: { x: number; y: number; width: number; height: number };
+  attributes: Record<string, string>;
+}
+
+export interface BrowserInteractiveElementsResult {
+  elements: InteractiveElementInfo[];
 }
 
 // ─── Humanize ───────────────────────────────────────────────────────────────

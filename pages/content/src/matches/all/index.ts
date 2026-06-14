@@ -1,7 +1,7 @@
 import { log, ELEMENT_SCROLL_SETTLE_MS } from '@extension/shared';
 import { htmlToMarkdown } from '@src/html-to-markdown';
 import { humanizedType, dispatchClick, sleep, randomDelay } from '@src/humanize';
-import type { WolffishCommand, WolffishResponse, InternalMessage } from '@extension/shared';
+import type { WolffishCommand, WolffishResponse, InternalMessage, InteractiveElementInfo } from '@extension/shared';
 
 const api = globalThis.chrome ?? (globalThis as Record<string, unknown>).browser;
 
@@ -76,6 +76,27 @@ const findElement = (selector: string): HTMLElement => {
   const el = querySelectorSafe(selector);
   if (!el) throw new Error(`Element not found: ${selector}`);
   return el;
+};
+
+/**
+ * Multi-element form of querySelectorSafe for ext_query_selector. Same
+ * `text=` support and the same deterministic validation message on invalid
+ * CSS — the raw `querySelectorAll` SyntaxError ("… is not a valid selector")
+ * classifies as retryable-unknown and burned three motor attempts every time
+ * the model produced a Playwright pseudo like `button:has-text("save")`.
+ */
+const querySelectorAllSafe = (selector: string): HTMLElement[] => {
+  if (selector.startsWith('text=')) {
+    const el = findByText(selector.slice('text='.length));
+    return el ? [el] : [];
+  }
+  try {
+    return Array.from(document.querySelectorAll(selector)) as HTMLElement[];
+  } catch {
+    throw new Error(
+      `selector syntax is incorrect: '${selector}' is not valid CSS. Use a CSS selector, or text=<visible text> to target by text.`,
+    );
+  }
 };
 
 // ─── Page Interaction Handlers ──────────────────────────────────────────────
@@ -227,6 +248,83 @@ const handleFileUpload = async (params: Record<string, unknown>) => {
   return { success: true };
 };
 
+/**
+ * Set a field's value reliably and instantly — the framework-safe fill.
+ *
+ * Plain assignment (`el.value = x`, which ext_type's non-humanized path uses)
+ * is invisible to React: React installs its own value setter on the element
+ * instance and tracks the last value it set, so a direct assignment is seen as
+ * "no change" and gets reverted on the next render — the field looks filled but
+ * the component state (and therefore any submit) is empty. The fix is to call
+ * the *native prototype* setter and then dispatch `input`, which is exactly
+ * what a real keystroke does under the hood. This is why submits silently
+ * no-op'd in the 06-14 run; ext_type stays for when humanized keystrokes are
+ * needed for stealth, ext_set_value is the reliable instant path.
+ */
+const handleSetValue = async (params: Record<string, unknown>) => {
+  const el = findElement(params.selector as string);
+  const value = (params.value as string) ?? '';
+  el.focus();
+
+  if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+    const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+    if (setter) setter.call(el, value);
+    else (el as HTMLInputElement).value = value;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  } else if (el.isContentEditable) {
+    document.execCommand('selectAll', false);
+    document.execCommand('insertText', false, value);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  } else {
+    throw new Error(`Element is not an input, textarea, or contenteditable: ${params.selector}`);
+  }
+
+  return { success: true, value };
+};
+
+/**
+ * Submit the form containing `selector` (or a form selector, or the focused
+ * element's form). Uses `form.requestSubmit()` — which fires a *cancelable
+ * submit event* and runs validation exactly like clicking the submit button,
+ * the event old.reddit/jQuery and most server-rendered forms actually listen
+ * for. The 06-14 run never found a reliable submit and cycled through
+ * `.usertext-buttons button`, `form.usertext button.save`, `text=save`,
+ * Tab+Enter, execute_js and even a second browser engine; this is the one
+ * primitive that replaces all of that. Falls back to clicking the submit
+ * control, then to `form.submit()`.
+ */
+const handleSubmitForm = async (params: Record<string, unknown>) => {
+  const sel = params.selector as string | undefined;
+  let form: HTMLFormElement | null = null;
+
+  if (sel) {
+    const el = findElement(sel);
+    form = el.tagName === 'FORM' ? (el as HTMLFormElement) : el.closest('form');
+  } else if (document.activeElement) {
+    form = (document.activeElement as HTMLElement).closest('form');
+  }
+
+  if (!form) {
+    throw new Error(
+      sel
+        ? `No form found for selector: ${sel}`
+        : 'No form to submit — pass a selector inside the form, or focus a field first',
+    );
+  }
+
+  if (typeof form.requestSubmit === 'function') {
+    form.requestSubmit();
+  } else {
+    const btn = form.querySelector<HTMLElement>('button[type="submit"], input[type="submit"], button:not([type])');
+    if (btn) btn.click();
+    else form.submit();
+  }
+
+  return { success: true };
+};
+
 // ─── Page Reading Handlers ──────────────────────────────────────────────────
 
 const STRIP_SELECTORS = 'script, style, noscript, svg, template, iframe, [aria-hidden="true"], [hidden]';
@@ -265,7 +363,7 @@ const handleQuerySelector = async (params: Record<string, unknown>) => {
   const limit = (params.limit as number) ?? 20;
   const defaultAttrs = ['id', 'class', 'href', 'src', 'type', 'name', 'value', 'role', 'aria-label'];
 
-  const nodes = document.querySelectorAll(selector);
+  const nodes = querySelectorAllSafe(selector);
   const elements: {
     tag: string;
     text: string;
@@ -372,6 +470,95 @@ const handleGetPageInfo = async () => {
     headings,
     forms,
   };
+};
+
+// ─── Coordinate ↔ DOM Bridging Handlers ─────────────────────────────────────
+
+const POINT_ATTRS = [
+  'id',
+  'class',
+  'href',
+  'src',
+  'type',
+  'name',
+  'value',
+  'role',
+  'aria-label',
+  'placeholder',
+  'title',
+];
+
+const handleElementFromPoint = async (params: Record<string, unknown>) => {
+  const x = params.x as number;
+  const y = params.y as number;
+  const el = document.elementFromPoint(x, y) as HTMLElement | null;
+  if (!el) return { found: false };
+
+  const rect = el.getBoundingClientRect();
+  const attributes: Record<string, string> = {};
+  for (const a of POINT_ATTRS) {
+    const v = el.getAttribute(a);
+    if (v !== null) attributes[a] = v;
+  }
+
+  return {
+    found: true,
+    tag: el.tagName.toLowerCase(),
+    text: (el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 200),
+    attributes,
+    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+  };
+};
+
+const INTERACTIVE_SELECTOR =
+  'a[href], button, input:not([type="hidden"]), textarea, select, [role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="checkbox"], [role="radio"], [role="switch"], [onclick], [tabindex]:not([tabindex="-1"]), summary, label[for]';
+
+const INTERACTIVE_ATTRS = ['id', 'name', 'type', 'href', 'value', 'placeholder', 'aria-label', 'title', 'role'];
+
+/**
+ * Map every visible interactive element to its centre coordinates plus the
+ * attributes needed to build a CSS selector. Bridges screenshot/visual
+ * coordinates and the DOM: read this, then act with ext_mouse_click (by
+ * centre coords) or ext_click (by a selector built from id/name/aria-label).
+ */
+const handleInteractiveElements = async (params: Record<string, unknown>) => {
+  const limit = (params.limit as number) ?? 50;
+  const scopeSel = params.selector as string | undefined;
+  const root: ParentNode = scopeSel ? findElement(scopeSel) : document;
+  const nodes = Array.from(root.querySelectorAll<HTMLElement>(INTERACTIVE_SELECTOR));
+  const elements: InteractiveElementInfo[] = [];
+
+  for (const el of nodes) {
+    if (elements.length >= limit) break;
+    if (!isVisible(el)) continue;
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) continue;
+
+    const attributes: Record<string, string> = {};
+    for (const a of INTERACTIVE_ATTRS) {
+      const v = el.getAttribute(a);
+      if (v !== null && v !== '') attributes[a] = v;
+    }
+
+    const label =
+      (el.textContent ?? '').replace(/\s+/g, ' ').trim() ||
+      el.getAttribute('aria-label') ||
+      el.getAttribute('placeholder') ||
+      (el as HTMLInputElement).value ||
+      el.getAttribute('title') ||
+      '';
+
+    elements.push({
+      tag: el.tagName.toLowerCase(),
+      text: label.slice(0, 120),
+      role: el.getAttribute('role') ?? '',
+      center: { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) },
+      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      attributes,
+    });
+  }
+
+  return { elements };
 };
 
 // ─── Storage Handlers ───────────────────────────────────────────────────────
@@ -524,6 +711,8 @@ const HANDLERS: Record<string, (params: Record<string, unknown>) => Promise<unkn
   browser_keypress: handleKeypress,
   browser_drag_drop: handleDragDrop,
   browser_file_upload: handleFileUpload,
+  browser_set_value: handleSetValue,
+  browser_submit_form: handleSubmitForm,
   browser_read_page: handleReadPage,
   browser_query_selector: handleQuerySelector,
   browser_get_attribute: handleGetAttribute,
@@ -535,6 +724,8 @@ const HANDLERS: Record<string, (params: Record<string, unknown>) => Promise<unkn
   browser_clipboard_write: handleClipboardWrite,
   browser_wait_for: handleWaitFor,
   browser_wait_for_network_idle: handleWaitForNetworkIdle,
+  browser_element_from_point: handleElementFromPoint,
+  browser_interactive_elements: handleInteractiveElements,
 };
 
 const handleCommand = async (command: WolffishCommand): Promise<WolffishResponse> => {

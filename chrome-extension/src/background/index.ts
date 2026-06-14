@@ -73,6 +73,10 @@ import {
   handleCDPHover,
   handleCDPKeypress,
   handleMouseMove,
+  handleMouseClick,
+  handleMouseDown,
+  handleMouseUp,
+  handleMouseDrag,
   getDebuggerState,
 } from './debugger.js';
 import { handleHumanize } from './humanize-actions.js';
@@ -728,6 +732,10 @@ const SERVICE_WORKER_HANDLERS: Record<string, (params: Record<string, unknown>) 
   [WolffishCommands.DEBUGGER_DETACH]: handleDebuggerDetach,
   [WolffishCommands.DEBUGGER_STATUS]: handleDebuggerStatus,
   [WolffishCommands.BROWSER_MOUSE_MOVE]: handleMouseMove,
+  [WolffishCommands.BROWSER_MOUSE_CLICK]: handleMouseClick,
+  [WolffishCommands.BROWSER_MOUSE_DOWN]: handleMouseDown,
+  [WolffishCommands.BROWSER_MOUSE_UP]: handleMouseUp,
+  [WolffishCommands.BROWSER_MOUSE_DRAG]: handleMouseDrag,
   [WolffishCommands.HUMANIZE]: handleHumanize,
 };
 

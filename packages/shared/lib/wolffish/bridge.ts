@@ -67,7 +67,19 @@ const ensureContentScriptInjected = async (tabId: number): Promise<void> => {
 };
 
 const resolveTabId = async (params: { tabId?: number }): Promise<number> => {
-  if (params.tabId !== undefined) return params.tabId;
+  // A provided tabId is verified before use. Agents routinely pass a guessed
+  // or stale id (observed live: `tabId: 1`, which never exists — Chrome ids
+  // are large integers), and the resulting "No tab with id: N" classifies as
+  // retryable-unknown, so the motor burned three attempts before surfacing it.
+  // Falling back to the active tab matches what the agent meant ("the current
+  // tab") and turns a dead-end into a no-op.
+  if (params.tabId !== undefined) {
+    const exists = await api?.tabs
+      ?.get(params.tabId)
+      .then(() => true)
+      .catch(() => false);
+    if (exists) return params.tabId;
+  }
   const tabs = await api?.tabs?.query({ active: true, currentWindow: true });
   if (!tabs?.length) throw new Error('No active tab found');
   return tabs[0].id!;

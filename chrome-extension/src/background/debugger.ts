@@ -1,4 +1,4 @@
-import { log } from '@extension/shared';
+import { log, resolveTabId } from '@extension/shared';
 import type {
   DebuggerAttachParams,
   DebuggerAttachResult,
@@ -10,6 +10,10 @@ import type {
   BrowserKeypressParams,
   BrowserMouseMoveParams,
   BrowserMouseMoveResult,
+  BrowserMouseClickParams,
+  BrowserMouseButtonParams,
+  BrowserMouseDragParams,
+  BrowserMouseActionResult,
 } from '@extension/shared';
 import { gaussianDelay, sleep } from './gaussian.js';
 
@@ -70,6 +74,185 @@ let cursorX = 0;
 let cursorY = 0;
 
 const getCursorPosition = (): { x: number; y: number } => ({ x: cursorX, y: cursorY });
+
+// ─── Selector → Coordinate Resolver ──────────────────────────────────────────
+//
+// `text=`-aware so selector behaviour in debugger mode matches the
+// content-script path. The CDP handlers used to call `document.querySelector`
+// directly, so `text=<visible text>` selectors (supported everywhere else)
+// silently failed once the debugger was attached — a footgun now that the
+// agent is told to attach for nearly everything. Mirrors the content
+// script's findByText/querySelectorSafe: deepest visible match, exact beats
+// substring; invalid CSS surfaces a deterministic validation message.
+
+const BUTTON_MASK: Record<string, number> = { left: 1, right: 2, middle: 4 };
+
+const resolveElementCoords = async (
+  tabId: number,
+  selector: string,
+  opts: { scroll?: boolean } = {},
+): Promise<{ x: number; y: number; href: string | null }> => {
+  const result = await api.scripting.executeScript({
+    target: { tabId },
+    func: (sel: string, scroll: boolean) => {
+      const normalize = (s: string): string => s.replace(/\s+/g, ' ').trim().toLowerCase();
+      const isVisible = (e: HTMLElement): boolean => {
+        if (e.offsetParent !== null) return true;
+        const st = getComputedStyle(e);
+        return st.display !== 'none' && st.visibility !== 'hidden';
+      };
+      let el: HTMLElement | null = null;
+      if (sel.startsWith('text=')) {
+        const needle = normalize(sel.slice('text='.length).replace(/^(["'])([\s\S]*)\1$/, '$2'));
+        if (needle) {
+          const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE']);
+          const exact: HTMLElement[] = [];
+          const partial: HTMLElement[] = [];
+          const all = document.body ? Array.from(document.body.getElementsByTagName('*')) : [];
+          for (const node of all) {
+            const e = node as HTMLElement;
+            if (SKIP.has(e.tagName)) continue;
+            const t = normalize(e.textContent ?? '');
+            if (!t || t.length > needle.length + 200) continue;
+            if (t === needle) exact.push(e);
+            else if (t.includes(needle)) partial.push(e);
+          }
+          const pool = exact.length > 0 ? exact : partial;
+          const deepest = pool.filter(e => !pool.some(o => o !== e && e.contains(o)));
+          el = deepest.find(isVisible) ?? null;
+        }
+      } else {
+        try {
+          el = document.querySelector(sel) as HTMLElement | null;
+        } catch {
+          return {
+            error: `selector syntax is incorrect: '${sel}' is not valid CSS. Use a CSS selector, or text=<visible text> to target by text.`,
+          };
+        }
+      }
+      if (!el) return null;
+      if (scroll) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const rect = el.getBoundingClientRect();
+      const anchor = el.closest('a');
+      return {
+        x: Math.round(rect.left + rect.width / 2),
+        y: Math.round(rect.top + rect.height / 2),
+        href: anchor?.href || null,
+      };
+    },
+    args: [selector, opts.scroll ?? false],
+    world: 'MAIN' as chrome.scripting.ExecutionWorld,
+  });
+
+  const info = result[0]?.result as { x: number; y: number; href: string | null } | { error: string } | null;
+  if (info && 'error' in info) throw new Error(info.error);
+  if (!info) throw new Error(`Element not found: ${selector}`);
+  return info;
+};
+
+/** Resolve a click target from either a selector or explicit x/y coordinates. */
+const resolveTarget = async (
+  tabId: number,
+  params: { x?: number; y?: number; selector?: string },
+  opts: { scroll?: boolean } = {},
+): Promise<{ x: number; y: number; href: string | null }> => {
+  if (params.selector) return resolveElementCoords(tabId, params.selector, opts);
+  if (typeof params.x === 'number' && typeof params.y === 'number') {
+    return { x: params.x, y: params.y, href: null };
+  }
+  throw new Error('Provide either a selector or x/y coordinates');
+};
+
+// ─── CDP Mouse Primitives ────────────────────────────────────────────────────
+
+/** Glide the cursor to (x, y) along a bezier path. `dragging` holds the left button down. */
+const cdpMove = async (x: number, y: number, dragging = false): Promise<void> => {
+  const steps = gaussianDelay(10, 20);
+  const path = generateBezierPath(cursorX, cursorY, x, y, steps);
+  for (const point of path) {
+    await sendCDP('Input.dispatchMouseEvent', {
+      type: 'mouseMoved',
+      x: point.x,
+      y: point.y,
+      ...(dragging ? { button: 'left', buttons: 1 } : {}),
+    });
+    await sleep(gaussianDelay(5, 15));
+  }
+  cursorX = x;
+  cursorY = y;
+};
+
+const cdpPress = (x: number, y: number, button: string, clickCount = 1): Promise<unknown> =>
+  sendCDP('Input.dispatchMouseEvent', {
+    type: 'mousePressed',
+    x,
+    y,
+    button,
+    buttons: BUTTON_MASK[button] ?? 1,
+    clickCount,
+  });
+
+const cdpRelease = (x: number, y: number, button: string, clickCount = 1): Promise<unknown> =>
+  sendCDP('Input.dispatchMouseEvent', {
+    type: 'mouseReleased',
+    x,
+    y,
+    button,
+    buttons: 0,
+    clickCount,
+  });
+
+/**
+ * Non-debugger fallback: dispatch synthetic mouse events at the point in the
+ * page. Functional (page handlers fire) but `isTrusted: false` — which is
+ * exactly why debugger mode is preferred. Runs in MAIN so the events reach
+ * the site's own listeners.
+ */
+const fallbackMouse = async (
+  tabId: number,
+  x: number,
+  y: number,
+  kind: 'click' | 'dblclick' | 'down' | 'up' | 'contextmenu',
+  button: string,
+): Promise<void> => {
+  await api.scripting.executeScript({
+    target: { tabId },
+    func: (px: number, py: number, k: string, btn: string) => {
+      const buttonNum = btn === 'right' ? 2 : btn === 'middle' ? 1 : 0;
+      const el = document.elementFromPoint(px, py) ?? document.body;
+      const fire = (type: string): void => {
+        el.dispatchEvent(
+          new MouseEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            clientX: px,
+            clientY: py,
+            button: buttonNum,
+            view: window,
+          }),
+        );
+      };
+      if (k === 'down') return fire('mousedown');
+      if (k === 'up') return fire('mouseup');
+      if (k === 'contextmenu') {
+        fire('mousedown');
+        fire('mouseup');
+        return fire('contextmenu');
+      }
+      fire('mousedown');
+      fire('mouseup');
+      fire('click');
+      if (k === 'dblclick') {
+        fire('mousedown');
+        fire('mouseup');
+        fire('click');
+        fire('dblclick');
+      }
+    },
+    args: [x, y, kind, button],
+    world: 'MAIN' as chrome.scripting.ExecutionWorld,
+  });
+};
 
 // ─── Event Listeners ───────────────────────────────────────────────────────
 
@@ -154,26 +337,7 @@ export const handleCDPClick = async (
   const { selector } = params as unknown as BrowserClickParams;
   const tabId = attachedTabId!;
 
-  const result = await api.scripting.executeScript({
-    target: { tabId },
-    func: (sel: string) => {
-      const el = document.querySelector(sel);
-      if (!el) return null;
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      const rect = el.getBoundingClientRect();
-      const anchor = el.closest('a');
-      return {
-        x: Math.round(rect.left + rect.width / 2),
-        y: Math.round(rect.top + rect.height / 2),
-        href: anchor?.href || null,
-      };
-    },
-    args: [selector],
-    world: 'MAIN' as chrome.scripting.ExecutionWorld,
-  });
-
-  const info = result[0]?.result as { x: number; y: number; href: string | null } | null;
-  if (!info) throw new Error(`Element not found: ${selector}`);
+  const info = await resolveElementCoords(tabId, selector, { scroll: true });
 
   await sleep(gaussianDelay(50, 150));
 
@@ -210,13 +374,21 @@ export const handleCDPClick = async (
   });
 
   // Fallback: if the clicked element is inside an <a> with href,
-  // dispatch a real DOM click to ensure navigation triggers
+  // dispatch a real DOM click to ensure navigation triggers. The
+  // querySelector is guarded because `selector` may be a `text=` form
+  // (invalid CSS) — in that case the trusted click above already landed,
+  // so skipping this belt-and-suspenders re-click is fine.
   if (info.href) {
     await sleep(200);
     await api.scripting.executeScript({
       target: { tabId },
       func: (sel: string) => {
-        const el = document.querySelector(sel);
+        let el: Element | null = null;
+        try {
+          el = document.querySelector(sel);
+        } catch {
+          el = null;
+        }
         const anchor = el?.closest('a');
         if (anchor) anchor.click();
       },
@@ -357,37 +529,10 @@ export const handleCDPHover = async (params: Record<string, unknown>): Promise<{
   const { selector } = params as unknown as BrowserHoverParams;
   const tabId = attachedTabId!;
 
-  const result = await api.scripting.executeScript({
-    target: { tabId },
-    func: (sel: string) => {
-      const el = document.querySelector(sel);
-      if (!el) return null;
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      const rect = el.getBoundingClientRect();
-      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
-    },
-    args: [selector],
-    world: 'MAIN' as chrome.scripting.ExecutionWorld,
-  });
-
-  const coords = result[0]?.result as { x: number; y: number } | null;
-  if (!coords) throw new Error(`Element not found: ${selector}`);
+  const coords = await resolveElementCoords(tabId, selector, { scroll: true });
 
   await sleep(100);
-
-  const steps = gaussianDelay(10, 20);
-  const path = generateBezierPath(cursorX, cursorY, coords.x, coords.y, steps);
-  for (const point of path) {
-    await sendCDP('Input.dispatchMouseEvent', {
-      type: 'mouseMoved',
-      x: point.x,
-      y: point.y,
-    });
-    await sleep(gaussianDelay(5, 15));
-  }
-
-  cursorX = coords.x;
-  cursorY = coords.y;
+  await cdpMove(coords.x, coords.y);
 
   return { success: true };
 };
@@ -481,6 +626,135 @@ export const handleMouseMove = async (params: Record<string, unknown>): Promise<
   cursorY = y;
 
   return { success: true };
+};
+
+// ─── Coordinate Mouse Handlers ───────────────────────────────────────────────
+//
+// Like handleMouseMove, these are service-worker handlers that branch on the
+// debugger state rather than CDP-routable content commands. With the debugger
+// attached they emit trusted `Input.dispatchMouseEvent` input (isTrusted:
+// true); otherwise they fall back to synthetic events dispatched in the page.
+// Each accepts a `selector` (resolved to the element's centre) OR explicit
+// x/y viewport coordinates — the latter is what makes canvas, maps, SVG and
+// other non-DOM surfaces clickable.
+
+export const handleMouseClick = async (params: Record<string, unknown>): Promise<BrowserMouseActionResult> => {
+  const p = params as unknown as BrowserMouseClickParams;
+  const button = p.button ?? 'left';
+  const double = p.double ?? false;
+
+  if (isAttached && attachedTabId !== null) {
+    const { x, y } = await resolveTarget(attachedTabId, p, { scroll: true });
+    await sleep(gaussianDelay(50, 150));
+    await cdpMove(x, y);
+    await cdpPress(x, y, button, 1);
+    await sleep(gaussianDelay(30, 80));
+    await cdpRelease(x, y, button, 1);
+    if (double) {
+      await sleep(gaussianDelay(40, 90));
+      await cdpPress(x, y, button, 2);
+      await sleep(gaussianDelay(30, 80));
+      await cdpRelease(x, y, button, 2);
+    }
+    return { success: true, x, y, trusted: true };
+  }
+
+  const tabId = await resolveTabId(p as { tabId?: number });
+  const { x, y } = await resolveTarget(tabId, p, { scroll: true });
+  const kind = button === 'right' ? 'contextmenu' : double ? 'dblclick' : 'click';
+  await fallbackMouse(tabId, x, y, kind, button);
+  return { success: true, x, y, trusted: false };
+};
+
+export const handleMouseDown = async (params: Record<string, unknown>): Promise<BrowserMouseActionResult> => {
+  const p = params as unknown as BrowserMouseButtonParams;
+  const button = p.button ?? 'left';
+
+  if (isAttached && attachedTabId !== null) {
+    const { x, y } = await resolveTarget(attachedTabId, p, { scroll: true });
+    await cdpMove(x, y);
+    await cdpPress(x, y, button, 1);
+    return { success: true, x, y, trusted: true };
+  }
+
+  const tabId = await resolveTabId(p as { tabId?: number });
+  const { x, y } = await resolveTarget(tabId, p, { scroll: true });
+  await fallbackMouse(tabId, x, y, 'down', button);
+  return { success: true, x, y, trusted: false };
+};
+
+export const handleMouseUp = async (params: Record<string, unknown>): Promise<BrowserMouseActionResult> => {
+  const p = params as unknown as BrowserMouseButtonParams;
+  const button = p.button ?? 'left';
+
+  if (isAttached && attachedTabId !== null) {
+    const { x, y } = await resolveTarget(attachedTabId, p, { scroll: false });
+    await cdpRelease(x, y, button, 1);
+    return { success: true, x, y, trusted: true };
+  }
+
+  const tabId = await resolveTabId(p as { tabId?: number });
+  const { x, y } = await resolveTarget(tabId, p, { scroll: false });
+  await fallbackMouse(tabId, x, y, 'up', button);
+  return { success: true, x, y, trusted: false };
+};
+
+/**
+ * Press at the source, glide to the target with the button held, release.
+ * In debugger mode this is a real coordinate drag (the canonical CDP recipe
+ * used by Playwright/Puppeteer) — far more reliable than the synthetic
+ * HTML5 DragEvent path of ext_drag_drop, which most modern apps (canvas,
+ * react-dnd, sliders) ignore.
+ */
+export const handleMouseDrag = async (params: Record<string, unknown>): Promise<BrowserMouseActionResult> => {
+  const p = params as unknown as BrowserMouseDragParams;
+
+  const point = async (
+    tabId: number,
+    selector: string | undefined,
+    x: number | undefined,
+    y: number | undefined,
+  ): Promise<{ x: number; y: number }> => {
+    if (selector) return resolveElementCoords(tabId, selector, { scroll: true });
+    if (typeof x === 'number' && typeof y === 'number') return { x, y };
+    throw new Error('Drag requires sourceSelector/targetSelector or startX/startY and endX/endY');
+  };
+
+  if (isAttached && attachedTabId !== null) {
+    const tabId = attachedTabId;
+    const start = await point(tabId, p.sourceSelector, p.startX, p.startY);
+    const end = await point(tabId, p.targetSelector, p.endX, p.endY);
+    await cdpMove(start.x, start.y);
+    await cdpPress(start.x, start.y, 'left', 1);
+    await sleep(gaussianDelay(60, 140));
+    await cdpMove(end.x, end.y, true);
+    await sleep(gaussianDelay(60, 140));
+    await cdpRelease(end.x, end.y, 'left', 1);
+    return { success: true, x: end.x, y: end.y, trusted: true };
+  }
+
+  const tabId = await resolveTabId(p as { tabId?: number });
+  const start = await point(tabId, p.sourceSelector, p.startX, p.startY);
+  const end = await point(tabId, p.targetSelector, p.endX, p.endY);
+  await api.scripting.executeScript({
+    target: { tabId },
+    func: (sx: number, sy: number, ex: number, ey: number) => {
+      const src = document.elementFromPoint(sx, sy) ?? document.body;
+      const tgt = document.elementFromPoint(ex, ey) ?? document.body;
+      const fire = (type: string, x: number, y: number, el: Element): void => {
+        el.dispatchEvent(
+          new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, view: window }),
+        );
+      };
+      fire('mousedown', sx, sy, src);
+      fire('mousemove', Math.round((sx + ex) / 2), Math.round((sy + ey) / 2), tgt);
+      fire('mousemove', ex, ey, tgt);
+      fire('mouseup', ex, ey, tgt);
+    },
+    args: [start.x, start.y, end.x, end.y],
+    world: 'MAIN' as chrome.scripting.ExecutionWorld,
+  });
+  return { success: true, x: end.x, y: end.y, trusted: false };
 };
 
 export { getDebuggerState, getCursorPosition };

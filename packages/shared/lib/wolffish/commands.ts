@@ -15,6 +15,8 @@ export const WolffishCommands = {
   BROWSER_KEYPRESS: 'browser_keypress',
   BROWSER_DRAG_DROP: 'browser_drag_drop',
   BROWSER_FILE_UPLOAD: 'browser_file_upload',
+  BROWSER_SET_VALUE: 'browser_set_value',
+  BROWSER_SUBMIT_FORM: 'browser_submit_form',
 
   // Page Reading
   BROWSER_READ_PAGE: 'browser_read_page',
@@ -77,8 +79,16 @@ export const WolffishCommands = {
   DEBUGGER_DETACH: 'browser_debugger_detach',
   DEBUGGER_STATUS: 'browser_debugger_status',
 
-  // Mouse Move
+  // Mouse Interaction (coordinate- or selector-based; trusted input in debugger mode)
   BROWSER_MOUSE_MOVE: 'browser_mouse_move',
+  BROWSER_MOUSE_CLICK: 'browser_mouse_click',
+  BROWSER_MOUSE_DOWN: 'browser_mouse_down',
+  BROWSER_MOUSE_UP: 'browser_mouse_up',
+  BROWSER_MOUSE_DRAG: 'browser_mouse_drag',
+
+  // Coordinate ↔ DOM bridging (read-only)
+  BROWSER_ELEMENT_FROM_POINT: 'browser_element_from_point',
+  BROWSER_INTERACTIVE_ELEMENTS: 'browser_interactive_elements',
 
   // Humanize
   HUMANIZE: 'browser_humanize',
@@ -96,6 +106,8 @@ export const CONTENT_SCRIPT_COMMANDS: Set<string> = new Set([
   WolffishCommands.BROWSER_KEYPRESS,
   WolffishCommands.BROWSER_DRAG_DROP,
   WolffishCommands.BROWSER_FILE_UPLOAD,
+  WolffishCommands.BROWSER_SET_VALUE,
+  WolffishCommands.BROWSER_SUBMIT_FORM,
   WolffishCommands.BROWSER_READ_PAGE,
   WolffishCommands.BROWSER_QUERY_SELECTOR,
   WolffishCommands.BROWSER_GET_ATTRIBUTE,
@@ -107,6 +119,8 @@ export const CONTENT_SCRIPT_COMMANDS: Set<string> = new Set([
   WolffishCommands.BROWSER_CLIPBOARD_WRITE,
   WolffishCommands.BROWSER_WAIT_FOR,
   WolffishCommands.BROWSER_WAIT_FOR_NETWORK_IDLE,
+  WolffishCommands.BROWSER_ELEMENT_FROM_POINT,
+  WolffishCommands.BROWSER_INTERACTIVE_ELEMENTS,
 ]);
 
 export const SERVICE_WORKER_COMMANDS: Set<string> = new Set([
@@ -141,6 +155,10 @@ export const SERVICE_WORKER_COMMANDS: Set<string> = new Set([
   WolffishCommands.DEBUGGER_DETACH,
   WolffishCommands.DEBUGGER_STATUS,
   WolffishCommands.BROWSER_MOUSE_MOVE,
+  WolffishCommands.BROWSER_MOUSE_CLICK,
+  WolffishCommands.BROWSER_MOUSE_DOWN,
+  WolffishCommands.BROWSER_MOUSE_UP,
+  WolffishCommands.BROWSER_MOUSE_DRAG,
   WolffishCommands.HUMANIZE,
 ]);
 
