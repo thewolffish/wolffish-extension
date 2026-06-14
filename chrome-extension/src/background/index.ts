@@ -623,10 +623,13 @@ const handleWaitForNavigation = async (params: Record<string, unknown>): Promise
   });
 };
 
-// Plain sleeps are capped so a bad argument can't park the command queue
-// for an hour. Multi-minute waits survive MV3 service-worker idling
-// because the WebSocket heartbeat keeps the worker alive.
-const MAX_WAIT_SLEEP_MS = 300_000;
+// No cap on plain sleeps — the model decides the duration (see the
+// browser-extension SKILL.md). A wait cannot be interrupted once it's in
+// flight, so very long waits should be split across several ext_wait calls
+// rather than done as one giant sleep. Multi-minute waits survive MV3
+// service-worker idling because the WebSocket heartbeat keeps the worker
+// awake. We only sanitize the argument below — a missing, negative, or
+// non-finite value waits 0ms (no minimum is imposed).
 
 /**
  * Generic wait — the name agent models guess first, mirroring the
@@ -671,7 +674,8 @@ const handleWait = async (params: Record<string, unknown>): Promise<unknown> => 
     return result.data;
   }
 
-  const waited = Math.max(0, Math.min(timeoutMs ?? 1000, MAX_WAIT_SLEEP_MS));
+  const requested = Number(timeoutMs);
+  const waited = Number.isFinite(requested) && requested > 0 ? requested : 0;
   await new Promise(resolve => setTimeout(resolve, waited));
   return { waited };
 };
