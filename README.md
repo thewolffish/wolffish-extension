@@ -243,7 +243,7 @@ wolffish-extension/
 - **Website** — [wolffi.sh](https://wolffi.sh)
 - **Docs** — [docs.wolffi.sh](https://docs.wolffi.sh)
 - **Discord** — [Join](https://discord.com/invite/F5Ue36PzQ)
-- **X** — [@the_wolffish](https://x.com/the_wolffish)
+- **X** — [@younesbites](https://x.com/younesbites)
 
 ---
 
