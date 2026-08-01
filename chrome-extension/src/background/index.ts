@@ -80,6 +80,7 @@ import {
   getDebuggerState,
 } from './debugger.js';
 import { handleHumanize } from './humanize-actions.js';
+import { getBrowserIdentity } from './identity.js';
 
 const api = globalThis.chrome;
 
@@ -160,8 +161,15 @@ const connectWebSocket = async (port: number): Promise<void> => {
     log('Connected');
 
     const manifest = api.runtime.getManifest();
-    sendToServer({ type: 'extension_info', version: manifest.version });
-    sendToServer({ type: 'get_conversations' });
+    // Identity is async (storage + Firefox getBrowserInfo); keep the
+    // extension_info → get_conversations ordering inside one chain. If the
+    // socket drops meanwhile, sendToServer's readyState guard drops both.
+    void getBrowserIdentity()
+      .catch(() => null)
+      .then(identity => {
+        sendToServer({ type: 'extension_info', version: manifest.version, ...(identity ?? {}) });
+        sendToServer({ type: 'get_conversations' });
+      });
   };
 
   ws.onclose = () => {

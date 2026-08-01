@@ -30,6 +30,10 @@ const manifest = {
     'webNavigation',
     'sidePanel',
     'debugger',
+    // Profile identity for the multi-browser panel: which signed-in profile
+    // this connection belongs to. Chrome-only; Firefox ignores the pair.
+    'identity',
+    'identity.email',
   ],
   background: {
     service_worker: 'background.js',
