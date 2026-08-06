@@ -74,6 +74,9 @@ export const WolffishCommands = {
   // Notifications
   BROWSER_NOTIFY: 'browser_notify',
 
+  // Wolffish tab group — the label the model puts on its own workspace
+  BROWSER_SET_ACTIVITY: 'browser_set_activity',
+
   // Debugger Mode
   DEBUGGER_ATTACH: 'browser_debugger_attach',
   DEBUGGER_DETACH: 'browser_debugger_detach',
@@ -150,6 +153,7 @@ export const SERVICE_WORKER_COMMANDS: Set<string> = new Set([
   WolffishCommands.BROWSER_WAIT,
   WolffishCommands.BROWSER_WAIT_FOR_NAVIGATION,
   WolffishCommands.BROWSER_NOTIFY,
+  WolffishCommands.BROWSER_SET_ACTIVITY,
   WolffishCommands.BROWSER_GET_URL,
   WolffishCommands.DEBUGGER_ATTACH,
   WolffishCommands.DEBUGGER_DETACH,

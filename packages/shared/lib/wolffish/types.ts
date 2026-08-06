@@ -55,6 +55,8 @@ export interface ConnectionStatusResponse {
 export interface BrowserNavigateParams {
   url: string;
   waitUntil?: 'load' | 'domcontentloaded';
+  /** Open a fresh tab in the Wolffish group instead of reusing the current one. */
+  newTab?: boolean;
 }
 
 export interface BrowserNavigateResult {
@@ -243,6 +245,10 @@ export interface TabInfo {
   active: boolean;
   pinned: boolean;
   windowId: number;
+  /** Tab-group id, or -1 when ungrouped. */
+  groupId?: number;
+  /** True for tabs Wolffish opened and owns; the rest belong to the user. */
+  wolffish?: boolean;
 }
 
 export interface BrowserTabsListResult {
@@ -304,6 +310,8 @@ export interface BrowserWindowOpenParams {
 
 export interface BrowserWindowOpenResult {
   windowId: number;
+  /** The window's first tab. It sits outside the Wolffish group, so commands must name it. */
+  tabId?: number;
 }
 
 export interface BrowserWindowCloseParams {
@@ -491,6 +499,20 @@ export interface BrowserNotifyParams {
 
 export interface BrowserNotifyResult {
   notificationId: string;
+}
+
+// ─── Wolffish Tab Group ─────────────────────────────────────────────────────
+
+export interface BrowserSetActivityParams {
+  emoji?: string;
+  text?: string;
+}
+
+export interface BrowserSetActivityResult {
+  /** The title now shown on the Wolffish tab group. */
+  title: string;
+  /** False when the group does not exist yet — the title applies on creation. */
+  applied: boolean;
 }
 
 // ─── Debugger Mode ──────────────────────────────────────────────────────────

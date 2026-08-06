@@ -66,6 +66,18 @@ const ensureContentScriptInjected = async (tabId: number): Promise<void> => {
   });
 };
 
+let tabFallback: (() => Promise<number>) | null = null;
+
+/**
+ * Replace what `resolveTabId` falls back to when no usable `tabId` was passed.
+ * The background registers the Wolffish workspace tab here, so no command can
+ * default onto a tab the user opened. Left unset the fallback stays the active
+ * tab, which is what non-background contexts want.
+ */
+const setTabFallback = (fn: (() => Promise<number>) | null): void => {
+  tabFallback = fn;
+};
+
 const resolveTabId = async (params: { tabId?: number }): Promise<number> => {
   // A provided tabId is verified before use. Agents routinely pass a guessed
   // or stale id (observed live: `tabId: 1`, which never exists — Chrome ids
@@ -80,6 +92,7 @@ const resolveTabId = async (params: { tabId?: number }): Promise<number> => {
       .catch(() => false);
     if (exists) return params.tabId;
   }
+  if (tabFallback) return tabFallback();
   const tabs = await api?.tabs?.query({ active: true, currentWindow: true });
   if (!tabs?.length) throw new Error('No active tab found');
   return tabs[0].id!;
@@ -109,6 +122,7 @@ export {
   pingContentScript,
   ensureContentScriptInjected,
   resolveTabId,
+  setTabFallback,
   withTimeout,
   makeResponse,
   makeErrorResponse,

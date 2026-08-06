@@ -1,6 +1,6 @@
 {
   "name": "@wolffish/offscreen",
-  "version": "0.1.54",
+  "version": "0.1.55",
   "description": "Wolffish extension - offscreen document for WebSocket",
   "type": "module",
   "private": true,

@@ -12,6 +12,7 @@ import {
   sendToContentScript,
   ensureContentScriptInjected,
   resolveTabId,
+  setTabFallback,
   withTimeout,
   makeResponse,
   makeErrorResponse,
@@ -61,6 +62,8 @@ import type {
   BrowserNotifyResult,
   BrowserGetUrlParams,
   BrowserGetUrlResult,
+  BrowserSetActivityParams,
+  BrowserSetActivityResult,
   ConnectionStatus,
 } from '@extension/shared';
 import {
@@ -81,8 +84,21 @@ import {
 } from './debugger.js';
 import { handleHumanize } from './humanize-actions.js';
 import { getBrowserIdentity } from './identity.js';
+import {
+  adoptTab,
+  ensureWorkspaceTab,
+  getWorkspaceGroupId,
+  openWorkspaceTab,
+  rememberWorkspaceTab,
+  setActivity,
+} from './workspace.js';
 
 const api = globalThis.chrome;
+
+// Every command that does not name a tab targets Wolffish's own tab (created on
+// first use, inside the Wolffish tab group) instead of whatever the user was
+// looking at. This one line covers all ~15 `resolveTabId` call sites.
+setTabFallback(ensureWorkspaceTab);
 
 let connectionStatus: ConnectionStatus = 'disconnected';
 let connectionPort = DEFAULT_PORT;
@@ -276,8 +292,8 @@ const waitForTabSettled = (tabId: number, beforeUrl: string, timeoutMs: number):
   });
 
 const handleNavigate = async (params: Record<string, unknown>): Promise<BrowserNavigateResult> => {
-  const { url, waitUntil } = params as unknown as BrowserNavigateParams;
-  const tabId = await resolveTabId(params as { tabId?: number });
+  const { url, waitUntil, newTab } = params as unknown as BrowserNavigateParams;
+  const tabId = newTab ? await openWorkspaceTab() : await resolveTabId(params as { tabId?: number });
 
   // Snapshot where the tab is *before* navigating so waitForTabSettled can
   // tell a real commit from a stale read of the page we're leaving.
@@ -332,6 +348,10 @@ const handleTabsList = async (params: Record<string, unknown>): Promise<BrowserT
   const query = windowId !== undefined ? { windowId } : {};
   const tabs = await api.tabs.query(query);
 
+  // `wolffish` marks the tabs it is free to drive; everything else is the
+  // user's, and is only touched when a command names its id explicitly.
+  const groupId = await getWorkspaceGroupId();
+
   return {
     tabs: tabs.map(t => ({
       id: t.id!,
@@ -340,17 +360,20 @@ const handleTabsList = async (params: Record<string, unknown>): Promise<BrowserT
       active: t.active,
       pinned: t.pinned,
       windowId: t.windowId,
+      groupId: t.groupId,
+      wolffish: groupId !== null && t.groupId === groupId,
     })),
   };
 };
 
 const handleTabOpen = async (params: Record<string, unknown>): Promise<BrowserTabOpenResult> => {
   const { url, active } = params as unknown as BrowserTabOpenParams;
-  const tab = await api.tabs.create({ url, active: active ?? true });
+  const tabId = await openWorkspaceTab(url, active ?? true);
+  const tab = await api.tabs.get(tabId).catch(() => null);
 
   return {
-    tabId: tab.id!,
-    url: tab.pendingUrl || tab.url || url || '',
+    tabId,
+    url: tab?.pendingUrl || tab?.url || url || '',
   };
 };
 
@@ -364,6 +387,9 @@ const handleTabClose = async (params: Record<string, unknown>): Promise<{ succes
 const handleTabSwitch = async (params: Record<string, unknown>): Promise<{ success: boolean }> => {
   const { tabId } = params as unknown as BrowserTabSwitchParams;
   await api.tabs.update(tabId, { active: true });
+  // Switching between Wolffish's own tabs also moves the default target; a
+  // switch into one of the user's tabs deliberately does not.
+  await rememberWorkspaceTab(tabId);
 
   return { success: true };
 };
@@ -375,6 +401,10 @@ const handleTabDuplicate = async (params: Record<string, unknown>): Promise<Brow
   if (!newTab) {
     throw new Error(`Failed to duplicate tab ${tabId}`);
   }
+
+  // The copy is Wolffish's, even when the original was the user's — so it joins
+  // the group and becomes the target rather than being left stranded outside.
+  await adoptTab(newTab.id!);
 
   return { tabId: newTab.id! };
 };
@@ -418,7 +448,10 @@ const handleWindowOpen = async (params: Record<string, unknown>): Promise<Browse
 
   const win = await api.windows.create(createData);
 
-  return { windowId: win.id! };
+  // A separate window is deliberately outside the Wolffish group (grouping its
+  // tab would drag it straight back into the group's window), so hand back the
+  // tab id — it is the only way later commands can address this window.
+  return { windowId: win.id!, tabId: win.tabs?.[0]?.id };
 };
 
 const handleWindowClose = async (params: Record<string, unknown>): Promise<{ success: boolean }> => {
@@ -471,10 +504,18 @@ const handleScreenshot = async (params: Record<string, unknown>): Promise<Browse
     options.quality = quality;
   }
 
-  const dataUrl = await api.tabs.captureVisibleTab(null as unknown as number, options);
-
+  // captureVisibleTab can only photograph the *active* tab of a window, so the
+  // target has to be foregrounded first — otherwise the capture silently
+  // returns whichever other tab happened to be in front.
   const tabId = await resolveTabId(params as { tabId?: number });
-  const tab = await api.tabs.get(tabId);
+  let tab = await api.tabs.get(tabId);
+  if (!tab.active) {
+    await api.tabs.update(tabId, { active: true });
+    await new Promise(resolve => setTimeout(resolve, 150));
+    tab = await api.tabs.get(tabId);
+  }
+
+  const dataUrl = await api.tabs.captureVisibleTab(tab.windowId, options);
   const win = await api.windows.get(tab.windowId);
 
   return {
@@ -703,6 +744,17 @@ const handleNotify = async (params: Record<string, unknown>): Promise<BrowserNot
   return { notificationId };
 };
 
+// ─── Tab Group Activity Handler ─────────────────────────────────────────────
+
+/**
+ * The Wolffish tab group's title is fully model-driven: it sets an emoji and a
+ * short phrase for whatever it is doing, and clearing both restores "Wolffish".
+ */
+const handleSetActivity = async (params: Record<string, unknown>): Promise<BrowserSetActivityResult> => {
+  const { emoji, text } = params as unknown as BrowserSetActivityParams;
+  return setActivity({ emoji, text });
+};
+
 // ─── Get URL Handler ────────────────────────────────────────────────────────
 
 const handleGetUrl = async (params: Record<string, unknown>): Promise<BrowserGetUrlResult> => {
@@ -739,6 +791,7 @@ const SERVICE_WORKER_HANDLERS: Record<string, (params: Record<string, unknown>) 
   [WolffishCommands.BROWSER_WAIT]: handleWait,
   [WolffishCommands.BROWSER_WAIT_FOR_NAVIGATION]: handleWaitForNavigation,
   [WolffishCommands.BROWSER_NOTIFY]: handleNotify,
+  [WolffishCommands.BROWSER_SET_ACTIVITY]: handleSetActivity,
   [WolffishCommands.BROWSER_GET_URL]: handleGetUrl,
   [WolffishCommands.DEBUGGER_ATTACH]: handleDebuggerAttach,
   [WolffishCommands.DEBUGGER_DETACH]: handleDebuggerDetach,

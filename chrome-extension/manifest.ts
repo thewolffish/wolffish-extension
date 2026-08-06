@@ -18,6 +18,10 @@ const manifest = {
   host_permissions: ['<all_urls>'],
   permissions: [
     'tabs',
+    // Wolffish works inside its own tab group so it never drives the user's
+    // tabs; the group's title is also its live status line. Browsers without
+    // this API just get a plain dedicated tab.
+    'tabGroups',
     'activeTab',
     'alarms',
     'scripting',
