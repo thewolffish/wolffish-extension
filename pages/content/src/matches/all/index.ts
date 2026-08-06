@@ -725,7 +725,7 @@ const HANDLERS: Record<string, (params: Record<string, unknown>) => Promise<unkn
   browser_wait_for: handleWaitFor,
   browser_wait_for_network_idle: handleWaitForNetworkIdle,
   browser_element_from_point: handleElementFromPoint,
-  browser_interactive_elements: handleInteractiveElements,
+  browser_get_interactive_elements: handleInteractiveElements,
 };
 
 const handleCommand = async (command: WolffishCommand): Promise<WolffishResponse> => {

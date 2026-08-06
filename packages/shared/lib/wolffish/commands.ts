@@ -91,7 +91,7 @@ export const WolffishCommands = {
 
   // Coordinate ↔ DOM bridging (read-only)
   BROWSER_ELEMENT_FROM_POINT: 'browser_element_from_point',
-  BROWSER_INTERACTIVE_ELEMENTS: 'browser_interactive_elements',
+  BROWSER_GET_INTERACTIVE_ELEMENTS: 'browser_get_interactive_elements',
 
   // Humanize
   HUMANIZE: 'browser_humanize',
@@ -123,7 +123,7 @@ export const CONTENT_SCRIPT_COMMANDS: Set<string> = new Set([
   WolffishCommands.BROWSER_WAIT_FOR,
   WolffishCommands.BROWSER_WAIT_FOR_NETWORK_IDLE,
   WolffishCommands.BROWSER_ELEMENT_FROM_POINT,
-  WolffishCommands.BROWSER_INTERACTIVE_ELEMENTS,
+  WolffishCommands.BROWSER_GET_INTERACTIVE_ELEMENTS,
 ]);
 
 export const SERVICE_WORKER_COMMANDS: Set<string> = new Set([
