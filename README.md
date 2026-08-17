@@ -10,6 +10,25 @@ A Chrome/Brave extension that gives [Wolffish](https://wolffi.sh) direct control
 
 ---
 
+## Get the mobile app
+
+Wolffish Mobile is the companion phone app — pair it to your desktop once by scanning a QR code, then reach your agent from anywhere over an end-to-end encrypted tunnel.
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://apps.apple.com/us/app/wolffish/id6792797989"><img src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" height="56" alt="Download on the App Store" /></a>
+    </td>
+    <td align="center">
+      <a href="https://play.google.com/store/apps/details?id=sh.wolffi.mobile"><img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" height="83" alt="Get it on Google Play" /></a>
+    </td>
+  </tr>
+</table>
+
+Source: [thewolffish/wolffish-mobile](https://github.com/thewolffish/wolffish-mobile)
+
+---
+
 ## Watch
 
 <table>
@@ -240,6 +259,8 @@ wolffish-extension/
 ## Links
 
 - **Wolffish App** — [github.com/thewolffish](https://github.com/thewolffish)
+- **App Store** — [Wolffish for iOS](https://apps.apple.com/us/app/wolffish/id6792797989)
+- **Google Play** — [Wolffish for Android](https://play.google.com/store/apps/details?id=sh.wolffi.mobile)
 - **Website** — [wolffi.sh](https://wolffi.sh)
 - **Docs** — [docs.wolffi.sh](https://docs.wolffi.sh)
 - **Discord** — [Join](https://discord.com/invite/F5Ue36PzQ)
