@@ -67,9 +67,12 @@ const manifest = {
       run_at: 'document_idle',
     },
   ],
+  // Only the icons are reachable from web pages. The content script is
+  // injected by the service worker, the overlay is inline, and a broad
+  // `*.js`/`*.css` glob would let any page fingerprint the extension.
   web_accessible_resources: [
     {
-      resources: ['*.js', '*.css', '*.svg', 'icon-16.png', 'icon-32.png', 'icon-48.png', 'icon-128.png'],
+      resources: ['icon-16.png', 'icon-32.png', 'icon-48.png', 'icon-128.png'],
       matches: ['*://*/*'],
     },
   ],

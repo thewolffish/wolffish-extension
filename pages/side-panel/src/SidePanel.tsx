@@ -1,7 +1,7 @@
 import './SidePanel.css';
 import { t } from '@extension/i18n';
-import { withErrorBoundary, withSuspense } from '@extension/shared';
 import { ErrorDisplay, LoadingSpinner } from '@extension/ui';
+import { STORAGE_KEY_OVERLAY_ENABLED, withErrorBoundary, withSuspense } from '@extension/shared';
 import { useCallback, useEffect, useState } from 'react';
 import type { ConnectionStatus } from '@extension/shared';
 
@@ -90,9 +90,58 @@ const formatRelative = (ts: number): string => {
   return new Date(ts).toLocaleDateString(locale, { month: 'short', day: 'numeric' });
 };
 
+/**
+ * Browser-side readiness the panel can act on itself: the overlay switch
+ * (a plain storage flag the service worker honours) and the one setting a
+ * page cannot fix for the user — site access. `permissions.request` needs a
+ * user gesture, and a click in extension UI is one, so the fix is one tap.
+ */
+const useSetup = () => {
+  const [overlayEnabled, setOverlayEnabled] = useState(true);
+  const [allUrls, setAllUrls] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    chrome.storage.local.get([STORAGE_KEY_OVERLAY_ENABLED]).then(bag => {
+      setOverlayEnabled(bag[STORAGE_KEY_OVERLAY_ENABLED] !== false);
+    });
+    chrome.permissions
+      ?.contains({ origins: ['<all_urls>'] })
+      .then(setAllUrls)
+      .catch(() => setAllUrls(null));
+    const onChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+      if (area === 'local' && STORAGE_KEY_OVERLAY_ENABLED in changes) {
+        setOverlayEnabled(changes[STORAGE_KEY_OVERLAY_ENABLED].newValue !== false);
+      }
+    };
+    chrome.storage.onChanged.addListener(onChanged);
+    return () => chrome.storage.onChanged.removeListener(onChanged);
+  }, []);
+
+  const toggleOverlay = useCallback((enabled: boolean) => {
+    setOverlayEnabled(enabled);
+    chrome.storage.local.set({ [STORAGE_KEY_OVERLAY_ENABLED]: enabled }).catch(() => {});
+  }, []);
+
+  const requestAllUrls = useCallback(async () => {
+    try {
+      const granted = await chrome.permissions.request({ origins: ['<all_urls>'] });
+      setAllUrls(granted);
+    } catch {
+      setAllUrls(false);
+    }
+  }, []);
+
+  const openDetails = useCallback(() => {
+    chrome.tabs.create({ url: `chrome://extensions/?id=${chrome.runtime.id}` }).catch(() => {});
+  }, []);
+
+  return { overlayEnabled, allUrls, toggleOverlay, requestAllUrls, openDetails };
+};
+
 const SidePanel = () => {
   const theme = useTheme();
   const dir = t('bidiDir') || 'ltr';
+  const setup = useSetup();
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const [port, setPort] = useState<number>(0);
   const [view, setView] = useState<View>('conversations');
@@ -283,6 +332,37 @@ const SidePanel = () => {
           </div>
         </>
       )}
+
+      <footer className="panel-setup">
+        <span className="setup-title">{t('setupTitle')}</span>
+        <div className="setup-row">
+          <label>
+            <input
+              type="checkbox"
+              checked={setup.overlayEnabled}
+              onChange={e => setup.toggleOverlay(e.target.checked)}
+            />
+            {t('overlayToggle')}
+          </label>
+        </div>
+        <span className="setup-hint">{t('overlayHint')}</span>
+        {setup.allUrls === false ? (
+          <div className="setup-row">
+            <span className="setup-warn">{t('siteAccessMissing')}</span>
+            <button className="setup-button" onClick={() => void setup.requestAllUrls()}>
+              {t('siteAccessFix')}
+            </button>
+          </div>
+        ) : (
+          setup.allUrls === true && <span className="setup-hint">{t('siteAccessOk')}</span>
+        )}
+        <div className="setup-row">
+          <button className="setup-link" onClick={setup.openDetails}>
+            {t('openDetails')}
+          </button>
+          <span className="setup-hint">{t('detailsHint')}</span>
+        </div>
+      </footer>
     </div>
   );
 };

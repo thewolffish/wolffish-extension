@@ -23,12 +23,12 @@ export interface WolffishEvent {
 
 // ─── Internal Message Passing ────────────────────────────────────────────────
 
-export type InternalMessageSource = 'offscreen' | 'service-worker' | 'content-script' | 'popup';
+export type InternalMessageSource = 'service-worker' | 'content-script' | 'popup' | 'side-panel';
 
 export interface InternalMessage {
   source: InternalMessageSource;
   target: InternalMessageSource;
-  payload: WolffishCommand | WolffishResponse | WolffishEvent | ConnectionStatusPayload | PingPayload;
+  payload: WolffishCommand | WolffishResponse | WolffishEvent | ConnectionStatusPayload | PingPayload | OverlayPayload;
 }
 
 export interface ConnectionStatusPayload {
@@ -638,4 +638,324 @@ export interface HumanizeParams {
 export interface HumanizeResult {
   action: string;
   duration_ms: number;
+}
+
+// ─── v2: uid element references & snapshot ───────────────────────────────────
+
+/** A stable per-snapshot element reference: `${snapshotId}_${n}`. */
+export type ElementUid = string;
+
+export interface BrowserTakeSnapshotParams {
+  verbose?: boolean;
+  tabId?: number;
+}
+
+export interface BrowserTakeSnapshotResult {
+  snapshot: string;
+  url: string;
+  title: string;
+  nodeCount: number;
+  source: 'cdp' | 'dom';
+  snapshotId: number;
+}
+
+export interface BrowserResolveUidParams {
+  uid: ElementUid;
+  tabId?: number;
+}
+
+export interface BrowserResolveUidResult {
+  found: boolean;
+  center?: { x: number; y: number };
+  rect?: { x: number; y: number; width: number; height: number };
+  tag?: string;
+  role?: string;
+  name?: string;
+}
+
+/** Element targeting shared by every uid-aware command: uid wins over selector. */
+export interface ElementTarget {
+  uid?: ElementUid;
+  selector?: string;
+}
+
+export interface BrowserFindParams {
+  query: string;
+  limit?: number;
+  tabId?: number;
+}
+
+export interface FoundElement {
+  uid: ElementUid;
+  tag: string;
+  role: string;
+  text: string;
+  score: number;
+  center: { x: number; y: number };
+  rect: { x: number; y: number; width: number; height: number };
+}
+
+export interface BrowserFindResult {
+  elements: FoundElement[];
+  snapshotId: number;
+}
+
+export type FillKind = 'input' | 'textarea' | 'contenteditable' | 'select' | 'checkbox' | 'radio';
+
+export interface BrowserFillParams extends ElementTarget {
+  value: string;
+  tabId?: number;
+}
+
+export interface BrowserFillResult {
+  success: boolean;
+  value: string;
+  kind: FillKind;
+}
+
+export interface BrowserFillFormParams {
+  elements: Array<ElementTarget & { value: string }>;
+  tabId?: number;
+}
+
+export interface BrowserFillFormResult {
+  success: boolean;
+  filled: number;
+  failures: Array<{ ref: string; error: string }>;
+}
+
+/** Decorations added to every input command's result by the post-action wait. */
+export interface ActionAftermath {
+  navigated?: { url: string; title: string };
+  domChanged?: boolean;
+}
+
+// ─── v2: network / console / dialogs / emulation ─────────────────────────────
+
+export interface BrowserListNetworkRequestsParams {
+  pageSize?: number;
+  pageIdx?: number;
+  resourceTypes?: string[];
+  tabId?: number;
+}
+
+export interface NetworkRequestSummary {
+  reqid: number;
+  method: string;
+  url: string;
+  status: number | null;
+  type: string;
+  mimeType: string;
+  size: number | null;
+  durationMs: number | null;
+  failed: boolean;
+  fromCache: boolean;
+}
+
+export interface PageInfo {
+  index: number;
+  size: number;
+  pages: number;
+}
+
+export interface BrowserListNetworkRequestsResult {
+  requests: NetworkRequestSummary[];
+  total: number;
+  page: PageInfo;
+}
+
+export interface BrowserGetNetworkRequestParams {
+  reqid: number;
+  includeBody?: boolean;
+  tabId?: number;
+}
+
+export interface BrowserGetNetworkRequestResult {
+  request: { method: string; url: string; headers: Record<string, string>; postData?: string };
+  response: {
+    status: number;
+    statusText: string;
+    headers: Record<string, string>;
+    mimeType: string;
+    body?: string;
+    base64Encoded?: boolean;
+    bodyTruncated?: boolean;
+  } | null;
+}
+
+export type ConsoleMessageType =
+  | 'log'
+  | 'info'
+  | 'warn'
+  | 'error'
+  | 'debug'
+  | 'exception'
+  | 'trace'
+  | 'assert'
+  | 'dir'
+  | 'table'
+  | 'other';
+
+export interface BrowserListConsoleMessagesParams {
+  pageSize?: number;
+  pageIdx?: number;
+  types?: ConsoleMessageType[];
+  includeStackTraces?: boolean;
+  tabId?: number;
+}
+
+export interface ConsoleMessageEntry {
+  msgid: number;
+  type: ConsoleMessageType;
+  text: string;
+  timestamp: number;
+  url?: string;
+  line?: number;
+  column?: number;
+  stack?: string;
+}
+
+export interface BrowserListConsoleMessagesResult {
+  messages: ConsoleMessageEntry[];
+  total: number;
+  page: PageInfo;
+}
+
+export interface BrowserHandleDialogParams {
+  action: 'accept' | 'dismiss';
+  promptText?: string;
+  tabId?: number;
+}
+
+export interface BrowserHandleDialogResult {
+  success: boolean;
+  handled: { type: string; message: string } | null;
+}
+
+export type NetworkConditionName = 'Offline' | 'Slow 3G' | 'Fast 3G' | 'Slow 4G' | 'Fast 4G' | 'none';
+
+export interface EmulationState {
+  viewport?: string;
+  userAgent?: string;
+  colorScheme?: 'dark' | 'light' | 'auto';
+  geolocation?: string;
+  networkConditions?: NetworkConditionName;
+  cpuThrottlingRate?: number;
+}
+
+export interface BrowserEmulateParams extends EmulationState {
+  tabId?: number;
+}
+
+export interface BrowserEmulateResult {
+  success: boolean;
+  state: EmulationState;
+}
+
+// ─── v2: changed commands ────────────────────────────────────────────────────
+
+export interface BrowserScreenshotParamsV2 extends BrowserScreenshotParams {
+  uid?: ElementUid;
+}
+
+export interface BrowserScreenshotResultV2 extends BrowserScreenshotResult {
+  /** CSS-pixel viewport (or clip) size; coordinates for mouse tools live here. */
+  cssWidth: number;
+  cssHeight: number;
+  dpr: number;
+  mode: 'cdp' | 'visible';
+}
+
+export interface BrowserFileUploadParamsV2 extends ElementTarget {
+  files?: { name: string; content: string; mimeType: string }[];
+  filePaths?: string[];
+  tabId?: number;
+}
+
+export interface BrowserFileUploadResult {
+  success: boolean;
+  count: number;
+  via: 'paths' | 'data';
+}
+
+export interface BrowserDownloadParamsV2 extends BrowserDownloadParams {
+  waitMs?: number;
+}
+
+export interface BrowserDownloadResultV2 extends BrowserDownloadResult {
+  state: 'complete' | 'interrupted' | 'in_progress';
+  filename?: string;
+  error?: string;
+}
+
+export interface BrowserExecuteJsParamsV2 extends BrowserExecuteJsParams {
+  /** uids resolved to live element handles and passed positionally (CDP only). */
+  args?: ElementUid[];
+}
+
+export interface BrowserWaitForParamsV2 extends Omit<BrowserWaitForParams, 'selector'> {
+  selector?: string;
+  /** Resolves when ANY entry appears in the page's visible text. */
+  text?: string[];
+}
+
+export interface BrowserWaitForResultV2 extends BrowserWaitForResult {
+  matched?: string;
+}
+
+export interface BrowserMouseDragParamsV2 extends BrowserMouseDragParams {
+  from_uid?: ElementUid;
+  to_uid?: ElementUid;
+}
+
+export interface DebuggerDetachParams {
+  tabId?: number;
+}
+
+export interface DebuggerStatusResultV2 extends DebuggerStatusResult {
+  tabs: number[];
+}
+
+// ─── v2: readiness probe ─────────────────────────────────────────────────────
+
+export interface BrowserDoctorParams {
+  tabId?: number;
+}
+
+export interface BrowserDoctorResult {
+  extension: { id: string; version: string; manifestPermissions: string[]; hostPermissions: string[] };
+  siteAccessAllUrls: boolean | null;
+  incognitoAllowed: boolean | null;
+  fileSchemeAllowed: boolean | null;
+  notifications: 'granted' | 'denied' | null;
+  installType: string | null;
+  enabled: boolean | null;
+  mayDisable: boolean | null;
+  apis: { debugger: boolean; tabGroups: boolean; sidePanel: boolean; scripting: boolean; downloads: boolean };
+  debuggerAttachedTabs: number[];
+  scriptable: { tabId: number; ok: boolean; error?: string; url?: string } | null;
+  policyBlocked: boolean;
+  overlayEnabled: boolean;
+}
+
+// ─── v2: overlay (service worker → content script) ───────────────────────────
+
+export type OverlayOp = 'pill' | 'cursor' | 'pulse' | 'target' | 'hide' | 'capture_hide' | 'capture_show';
+
+export interface OverlayPayload {
+  type: 'overlay';
+  op: OverlayOp;
+  mode?: 'working' | 'reading';
+  text?: string;
+  x?: number;
+  y?: number;
+  kind?: 'pointer' | 'keyboard' | 'approximate';
+  label?: string;
+  animate?: boolean;
+  rect?: { x: number; y: number; width: number; height: number };
+}
+
+/** Server → extension event that flips the overlay switch. */
+export interface OverlayConfigEvent {
+  enabled: boolean;
 }

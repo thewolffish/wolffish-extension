@@ -180,6 +180,9 @@ const rememberWorkspaceTab = async (tabId: number): Promise<boolean> => {
   return true;
 };
 
+/** The current activity label, for surfaces other than the tab group (the on-page pill). */
+const getActivityLabel = async (): Promise<ActivityLabel | null> => readState<ActivityLabel>(KEY_LABEL);
+
 /** Model-set status shown on the tab group. No arguments resets it to "Wolffish". */
 const setActivity = async (label: ActivityLabel): Promise<{ title: string; applied: boolean }> => {
   const next: ActivityLabel = { emoji: label.emoji?.trim() || undefined, text: label.text?.trim() || undefined };
@@ -197,6 +200,7 @@ export {
   WOLFFISH_GROUP_TITLE,
   adoptTab,
   ensureWorkspaceTab,
+  getActivityLabel,
   getWorkspaceGroupId,
   isWorkspaceTab,
   openWorkspaceTab,

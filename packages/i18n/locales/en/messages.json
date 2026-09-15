@@ -1,50 +1,212 @@
 {
-  "extensionName": { "description": "Extension name", "message": "Wolffish" },
+  "extensionName": {
+    "description": "Extension name",
+    "message": "Wolffish"
+  },
   "extensionDescription": {
     "description": "Extension description",
     "message": "Browser capability for the Wolffish AI agent"
   },
-  "bidiDir": { "message": "ltr" },
-  "locale": { "message": "en" },
-  "statusConnected": { "message": "Connected" },
-  "statusConnecting": { "message": "Connecting" },
-  "statusDisconnected": { "message": "Waiting for app" },
-  "eventTypeNav": { "message": "NAV" },
-  "eventTypeClick": { "message": "CLICK" },
-  "eventTypeType": { "message": "TYPE" },
-  "eventTypeRead": { "message": "READ" },
-  "eventTypeTab": { "message": "TAB" },
-  "eventTypeJs": { "message": "JS" },
-  "eventTypeCookie": { "message": "COOKIE" },
-  "eventTypeWait": { "message": "WAIT" },
-  "eventTypeSnap": { "message": "SNAP" },
-  "eventTypeScroll": { "message": "SCROLL" },
-  "eventTypeDl": { "message": "DL" },
-  "eventTypeDebug": { "message": "DEBUG" },
-  "eventTypeMove": { "message": "MOVE" },
-  "eventTypeUnknown": { "message": "OTHER" },
-  "sampleNavigate": { "message": "Navigated to $1", "placeholders": { "1": { "content": "$1" } } },
-  "sampleClick": { "message": "Clicked $1", "placeholders": { "1": { "content": "$1" } } },
-  "sampleType": { "message": "Typed into $1", "placeholders": { "1": { "content": "$1" } } },
-  "sampleRead": { "message": "Read page as $1", "placeholders": { "1": { "content": "$1" } } },
-  "sampleTab": { "message": "$1", "placeholders": { "1": { "content": "$1" } } },
-  "sampleScreenshot": { "message": "Captured $1", "placeholders": { "1": { "content": "$1" } } },
-  "sampleScript": { "message": "Executed $1", "placeholders": { "1": { "content": "$1" } } },
+  "bidiDir": {
+    "message": "ltr"
+  },
+  "locale": {
+    "message": "en"
+  },
+  "statusConnected": {
+    "message": "Connected"
+  },
+  "statusConnecting": {
+    "message": "Connecting"
+  },
+  "statusDisconnected": {
+    "message": "Waiting for app"
+  },
+  "eventTypeNav": {
+    "message": "NAV"
+  },
+  "eventTypeClick": {
+    "message": "CLICK"
+  },
+  "eventTypeType": {
+    "message": "TYPE"
+  },
+  "eventTypeRead": {
+    "message": "READ"
+  },
+  "eventTypeTab": {
+    "message": "TAB"
+  },
+  "eventTypeJs": {
+    "message": "JS"
+  },
+  "eventTypeCookie": {
+    "message": "COOKIE"
+  },
+  "eventTypeWait": {
+    "message": "WAIT"
+  },
+  "eventTypeSnap": {
+    "message": "SNAP"
+  },
+  "eventTypeScroll": {
+    "message": "SCROLL"
+  },
+  "eventTypeDl": {
+    "message": "DL"
+  },
+  "eventTypeDebug": {
+    "message": "DEBUG"
+  },
+  "eventTypeMove": {
+    "message": "MOVE"
+  },
+  "eventTypeUnknown": {
+    "message": "OTHER"
+  },
+  "sampleNavigate": {
+    "message": "Navigated to $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "sampleClick": {
+    "message": "Clicked $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "sampleType": {
+    "message": "Typed into $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "sampleRead": {
+    "message": "Read page as $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "sampleTab": {
+    "message": "$1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "sampleScreenshot": {
+    "message": "Captured $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "sampleScript": {
+    "message": "Executed $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
   "sampleCookie": {
     "message": "$1 cookie for $2",
-    "placeholders": { "1": { "content": "$1" }, "2": { "content": "$2" } }
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      },
+      "2": {
+        "content": "$2"
+      }
+    }
   },
-  "sampleWait": { "message": "Waited for $1", "placeholders": { "1": { "content": "$1" } } },
-  "sampleDownload": { "message": "Downloaded $1", "placeholders": { "1": { "content": "$1" } } },
-  "extensionTest": { "message": "Extension Test" },
-  "justNow": { "message": "just now" },
-  "noConversations": { "message": "No conversations yet" },
-  "eventsCount": { "message": "$1 events", "placeholders": { "1": { "content": "$1" } } },
-  "emptyConnected": { "message": "Ready — events will appear here as the agent browses" },
-  "emptyDisconnected": { "message": "Launch Wolffish to start controlling the browser" },
-  "displayErrorInfo": { "message": "Error occur" },
-  "displayErrorDescription": { "message": "Sorry, something went wrong while loading the page." },
-  "displayErrorDetailsInfo": { "message": "Error details:" },
-  "displayErrorUnknownErrorInfo": { "message": "Unknown error" },
-  "displayErrorReset": { "message": "Run Again" }
+  "sampleWait": {
+    "message": "Waited for $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "sampleDownload": {
+    "message": "Downloaded $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "extensionTest": {
+    "message": "Extension Test"
+  },
+  "justNow": {
+    "message": "just now"
+  },
+  "noConversations": {
+    "message": "No conversations yet"
+  },
+  "eventsCount": {
+    "message": "$1 events",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "emptyConnected": {
+    "message": "Ready — events will appear here as the agent browses"
+  },
+  "emptyDisconnected": {
+    "message": "Launch Wolffish to start controlling the browser"
+  },
+  "displayErrorInfo": {
+    "message": "Error occur"
+  },
+  "displayErrorDescription": {
+    "message": "Sorry, something went wrong while loading the page."
+  },
+  "displayErrorDetailsInfo": {
+    "message": "Error details:"
+  },
+  "displayErrorUnknownErrorInfo": {
+    "message": "Unknown error"
+  },
+  "displayErrorReset": {
+    "message": "Run Again"
+  },
+  "setupTitle": {
+    "message": "Setup"
+  },
+  "overlayToggle": {
+    "message": "Show the Wolffish cursor on pages"
+  },
+  "overlayHint": {
+    "message": "A shadow cursor, a target outline and a pill on tabs Wolffish is using."
+  },
+  "siteAccessOk": {
+    "message": "Site access: all sites"
+  },
+  "siteAccessMissing": {
+    "message": "Site access is restricted — Wolffish cannot read or drive pages."
+  },
+  "siteAccessFix": {
+    "message": "Allow on all sites"
+  },
+  "openDetails": {
+    "message": "Extension details"
+  },
+  "detailsHint": {
+    "message": "Incognito and file:// access are toggled on the details page."
+  }
 }

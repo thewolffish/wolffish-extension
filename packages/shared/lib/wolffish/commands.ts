@@ -95,10 +95,32 @@ export const WolffishCommands = {
 
   // Humanize
   HUMANIZE: 'browser_humanize',
+
+  // Snapshot + uid element references (v2)
+  BROWSER_TAKE_SNAPSHOT: 'browser_take_snapshot',
+  BROWSER_RESOLVE_UID: 'browser_resolve_uid',
+  BROWSER_FIND: 'browser_find',
+  BROWSER_FILL: 'browser_fill',
+  BROWSER_FILL_FORM: 'browser_fill_form',
+
+  // CDP-backed observation (v2)
+  BROWSER_LIST_NETWORK_REQUESTS: 'browser_list_network_requests',
+  BROWSER_GET_NETWORK_REQUEST: 'browser_get_network_request',
+  BROWSER_LIST_CONSOLE_MESSAGES: 'browser_list_console_messages',
+  BROWSER_HANDLE_DIALOG: 'browser_handle_dialog',
+  BROWSER_EMULATE: 'browser_emulate',
+
+  // Readiness probe (v2)
+  BROWSER_DOCTOR: 'browser_doctor',
 } as const;
 
 export type WolffishCommandType = (typeof WolffishCommands)[keyof typeof WolffishCommands];
 
+/**
+ * Commands implemented in the page. `browser_file_upload` also appears in the
+ * service-worker set, which wins: that handler picks the CDP path for real
+ * file paths and delegates back here for base64 content.
+ */
 export const CONTENT_SCRIPT_COMMANDS: Set<string> = new Set([
   WolffishCommands.BROWSER_CLICK,
   WolffishCommands.BROWSER_TYPE,
@@ -124,6 +146,14 @@ export const CONTENT_SCRIPT_COMMANDS: Set<string> = new Set([
   WolffishCommands.BROWSER_WAIT_FOR_NETWORK_IDLE,
   WolffishCommands.BROWSER_ELEMENT_FROM_POINT,
   WolffishCommands.BROWSER_GET_INTERACTIVE_ELEMENTS,
+  // v2: snapshot/fill/find have a content-script (DOM) implementation that
+  // is the fallback when the tab has no CDP session; the dispatcher swaps to
+  // the CDP handler when one exists (see DEBUGGER_ROUTABLE_COMMANDS).
+  WolffishCommands.BROWSER_TAKE_SNAPSHOT,
+  WolffishCommands.BROWSER_RESOLVE_UID,
+  WolffishCommands.BROWSER_FIND,
+  WolffishCommands.BROWSER_FILL,
+  WolffishCommands.BROWSER_FILL_FORM,
 ]);
 
 export const SERVICE_WORKER_COMMANDS: Set<string> = new Set([
@@ -155,6 +185,7 @@ export const SERVICE_WORKER_COMMANDS: Set<string> = new Set([
   WolffishCommands.BROWSER_NOTIFY,
   WolffishCommands.BROWSER_SET_ACTIVITY,
   WolffishCommands.BROWSER_GET_URL,
+  WolffishCommands.BROWSER_FILE_UPLOAD,
   WolffishCommands.DEBUGGER_ATTACH,
   WolffishCommands.DEBUGGER_DETACH,
   WolffishCommands.DEBUGGER_STATUS,
@@ -164,12 +195,108 @@ export const SERVICE_WORKER_COMMANDS: Set<string> = new Set([
   WolffishCommands.BROWSER_MOUSE_UP,
   WolffishCommands.BROWSER_MOUSE_DRAG,
   WolffishCommands.HUMANIZE,
+  // v2: these need a CDP session and live in the service worker; without a
+  // session they answer with a deterministic "needs the debugger" error.
+  WolffishCommands.BROWSER_LIST_NETWORK_REQUESTS,
+  WolffishCommands.BROWSER_GET_NETWORK_REQUEST,
+  WolffishCommands.BROWSER_LIST_CONSOLE_MESSAGES,
+  WolffishCommands.BROWSER_HANDLE_DIALOG,
+  WolffishCommands.BROWSER_EMULATE,
+  WolffishCommands.BROWSER_DOCTOR,
 ]);
 
+/**
+ * Content-script commands the dispatcher re-routes to a CDP handler when the
+ * resolved tab has a debugger session. Each has a content-script twin with the
+ * same contract, so a CDP failure falls through to the DOM implementation.
+ */
 export const DEBUGGER_ROUTABLE_COMMANDS: Set<string> = new Set([
   WolffishCommands.BROWSER_CLICK,
   WolffishCommands.BROWSER_TYPE,
   WolffishCommands.BROWSER_SCROLL,
   WolffishCommands.BROWSER_HOVER,
   WolffishCommands.BROWSER_KEYPRESS,
+  WolffishCommands.BROWSER_TAKE_SNAPSHOT,
+  WolffishCommands.BROWSER_RESOLVE_UID,
+  WolffishCommands.BROWSER_FIND,
+  WolffishCommands.BROWSER_FILL,
+  WolffishCommands.BROWSER_FILL_FORM,
+  WolffishCommands.BROWSER_FILE_UPLOAD,
+  WolffishCommands.BROWSER_SET_VALUE,
+  WolffishCommands.BROWSER_GET_VALUE,
+  WolffishCommands.BROWSER_FOCUS,
+  WolffishCommands.BROWSER_SELECT,
+  WolffishCommands.BROWSER_GET_ATTRIBUTE,
+]);
+
+/**
+ * Commands that change the page. After any of these the service worker runs
+ * the post-action wait (navigation / DOM-quiet) and decorates the result with
+ * `navigated` / `domChanged`; they also drive the on-page shadow cursor.
+ */
+export const INPUT_COMMANDS: Set<string> = new Set([
+  WolffishCommands.BROWSER_CLICK,
+  WolffishCommands.BROWSER_TYPE,
+  WolffishCommands.BROWSER_SELECT,
+  WolffishCommands.BROWSER_HOVER,
+  WolffishCommands.BROWSER_SCROLL,
+  WolffishCommands.BROWSER_FOCUS,
+  WolffishCommands.BROWSER_KEYPRESS,
+  WolffishCommands.BROWSER_DRAG_DROP,
+  WolffishCommands.BROWSER_FILE_UPLOAD,
+  WolffishCommands.BROWSER_SET_VALUE,
+  WolffishCommands.BROWSER_SUBMIT_FORM,
+  WolffishCommands.BROWSER_FILL,
+  WolffishCommands.BROWSER_FILL_FORM,
+  WolffishCommands.BROWSER_MOUSE_MOVE,
+  WolffishCommands.BROWSER_MOUSE_CLICK,
+  WolffishCommands.BROWSER_MOUSE_DOWN,
+  WolffishCommands.BROWSER_MOUSE_UP,
+  WolffishCommands.BROWSER_MOUSE_DRAG,
+  WolffishCommands.BROWSER_NAVIGATE,
+  WolffishCommands.BROWSER_BACK,
+  WolffishCommands.BROWSER_FORWARD,
+  WolffishCommands.BROWSER_RELOAD,
+  WolffishCommands.BROWSER_EXECUTE_JS,
+  WolffishCommands.HUMANIZE,
+]);
+
+/**
+ * Commands that only observe the page. They light the "reading" pill on the
+ * overlay but never move the shadow cursor.
+ */
+export const READ_COMMANDS: Set<string> = new Set([
+  WolffishCommands.BROWSER_READ_PAGE,
+  WolffishCommands.BROWSER_QUERY_SELECTOR,
+  WolffishCommands.BROWSER_GET_ATTRIBUTE,
+  WolffishCommands.BROWSER_GET_VALUE,
+  WolffishCommands.BROWSER_GET_URL,
+  WolffishCommands.BROWSER_GET_PAGE_INFO,
+  WolffishCommands.BROWSER_SCREENSHOT,
+  WolffishCommands.BROWSER_PDF,
+  WolffishCommands.BROWSER_STORAGE_GET,
+  WolffishCommands.BROWSER_WAIT,
+  WolffishCommands.BROWSER_WAIT_FOR,
+  WolffishCommands.BROWSER_WAIT_FOR_NAVIGATION,
+  WolffishCommands.BROWSER_WAIT_FOR_NETWORK_IDLE,
+  WolffishCommands.BROWSER_ELEMENT_FROM_POINT,
+  WolffishCommands.BROWSER_GET_INTERACTIVE_ELEMENTS,
+  WolffishCommands.BROWSER_TAKE_SNAPSHOT,
+  WolffishCommands.BROWSER_RESOLVE_UID,
+  WolffishCommands.BROWSER_FIND,
+  WolffishCommands.BROWSER_LIST_NETWORK_REQUESTS,
+  WolffishCommands.BROWSER_GET_NETWORK_REQUEST,
+  WolffishCommands.BROWSER_LIST_CONSOLE_MESSAGES,
+]);
+
+/**
+ * Commands that must not run while a JavaScript dialog is open on the tab —
+ * the page is frozen behind it, so the only useful answer is "handle it".
+ */
+export const DIALOG_BLOCKED_COMMANDS: Set<string> = new Set([
+  ...INPUT_COMMANDS,
+  WolffishCommands.BROWSER_TAKE_SNAPSHOT,
+  WolffishCommands.BROWSER_FIND,
+  WolffishCommands.BROWSER_READ_PAGE,
+  WolffishCommands.BROWSER_SCREENSHOT,
 ]);

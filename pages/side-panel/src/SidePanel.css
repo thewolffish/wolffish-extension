@@ -325,3 +325,78 @@
   flex: 1;
   text-align: start;
 }
+
+/* ─── Setup (readiness) footer ─── */
+
+.panel-setup {
+  flex-shrink: 0;
+  padding: 10px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.dark .panel-setup {
+  border-top: 1px solid #2a313c;
+  color: #8b95a7;
+}
+
+.light .panel-setup {
+  border-top: 1px solid #d5dde5;
+  color: #5b6778;
+}
+
+.setup-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.setup-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.setup-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.setup-hint {
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+.setup-warn {
+  color: #f59e0b;
+}
+
+.setup-button {
+  border: 1px solid #3b82f6;
+  background: transparent;
+  color: #3b82f6;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.setup-button:hover {
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.setup-link {
+  color: #3b82f6;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 11px;
+  cursor: pointer;
+  text-decoration: underline;
+}

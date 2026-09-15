@@ -1,7 +1,24 @@
-import { log, ELEMENT_SCROLL_SETTLE_MS } from '@extension/shared';
+import { log, ELEMENT_SCROLL_SETTLE_MS, WolffishCommands } from '@extension/shared';
+import { handleFill, handleFillForm } from '@src/fill';
 import { htmlToMarkdown } from '@src/html-to-markdown';
 import { humanizedType, dispatchClick, sleep, randomDelay } from '@src/humanize';
-import type { WolffishCommand, WolffishResponse, InternalMessage, InteractiveElementInfo } from '@extension/shared';
+import { handleOverlay, isOverlayNode, OVERLAY_HOST_TAG } from '@src/overlay';
+import {
+  takeSnapshot,
+  hasSnapshot,
+  resolveUid,
+  resolveUidElement,
+  findInSnapshot,
+  currentSnapshotId,
+} from '@src/snapshot';
+import type {
+  WolffishCommand,
+  WolffishResponse,
+  InternalMessage,
+  InteractiveElementInfo,
+  ElementTarget,
+  OverlayPayload,
+} from '@extension/shared';
 
 const api = globalThis.chrome ?? (globalThis as Record<string, unknown>).browser;
 
@@ -35,7 +52,7 @@ const findByText = (raw: string): HTMLElement | null => {
   const all = document.body ? Array.from(document.body.getElementsByTagName('*')) : [];
   for (const node of all) {
     const el = node as HTMLElement;
-    if (SKIP.has(el.tagName)) continue;
+    if (SKIP.has(el.tagName) || isOverlayNode(el)) continue;
     const text = normalize(el.textContent ?? '');
     // Anything much longer than the needle is a container, not a target.
     if (!text || text.length > needle.length + 200) continue;
@@ -79,6 +96,23 @@ const findElement = (selector: string): HTMLElement => {
 };
 
 /**
+ * Element targeting for every uid-aware command: a snapshot uid wins over a
+ * selector, so a model that has both never falls back to the weaker one.
+ */
+const resolveElement = (target: ElementTarget): HTMLElement => {
+  if (typeof target.uid === 'string' && target.uid !== '') return resolveUidElement(target.uid).el;
+  if (typeof target.selector === 'string' && target.selector !== '') return findElement(target.selector);
+  throw new Error('Provide uid or selector.');
+};
+
+const targetOf = (params: Record<string, unknown>): ElementTarget => ({
+  uid: params.uid as string | undefined,
+  selector: params.selector as string | undefined,
+});
+
+const refOf = (params: Record<string, unknown>): string => String(params.uid ?? params.selector ?? '');
+
+/**
  * Multi-element form of querySelectorSafe for ext_query_selector. Same
  * `text=` support and the same deterministic validation message on invalid
  * CSS — the raw `querySelectorAll` SyntaxError ("… is not a valid selector")
@@ -102,7 +136,7 @@ const querySelectorAllSafe = (selector: string): HTMLElement[] => {
 // ─── Page Interaction Handlers ──────────────────────────────────────────────
 
 const handleClick = async (params: Record<string, unknown>) => {
-  const el = findElement(params.selector as string);
+  const el = resolveElement(targetOf(params));
   el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   await sleep(ELEMENT_SCROLL_SETTLE_MS);
   await sleep(randomDelay(50, 150));
@@ -111,7 +145,7 @@ const handleClick = async (params: Record<string, unknown>) => {
 };
 
 const handleType = async (params: Record<string, unknown>) => {
-  const el = findElement(params.selector as string);
+  const el = resolveElement(targetOf(params));
   const text = params.text as string;
   const clearFirst = (params.clearFirst as boolean) ?? false;
   const humanize = (params.humanize as boolean) ?? true;
@@ -141,8 +175,8 @@ const handleType = async (params: Record<string, unknown>) => {
 };
 
 const handleSelect = async (params: Record<string, unknown>) => {
-  const el = findElement(params.selector as string) as HTMLSelectElement;
-  if (el.tagName !== 'SELECT') throw new Error(`Element is not a <select>: ${params.selector}`);
+  const el = resolveElement(targetOf(params)) as HTMLSelectElement;
+  if (el.tagName !== 'SELECT') throw new Error(`Element is not a <select>: ${refOf(params)}`);
 
   el.value = params.value as string;
   el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -151,7 +185,7 @@ const handleSelect = async (params: Record<string, unknown>) => {
 };
 
 const handleHover = async (params: Record<string, unknown>) => {
-  const el = findElement(params.selector as string);
+  const el = resolveElement(targetOf(params));
   el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   await sleep(ELEMENT_SCROLL_SETTLE_MS);
 
@@ -161,8 +195,8 @@ const handleHover = async (params: Record<string, unknown>) => {
 };
 
 const handleScroll = async (params: Record<string, unknown>) => {
-  if (params.selector) {
-    const el = findElement(params.selector as string);
+  if (params.uid || params.selector) {
+    const el = resolveElement(targetOf(params));
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   } else {
     const direction = params.direction as string;
@@ -182,7 +216,7 @@ const handleScroll = async (params: Record<string, unknown>) => {
 };
 
 const handleFocus = async (params: Record<string, unknown>) => {
-  const el = findElement(params.selector as string);
+  const el = resolveElement(targetOf(params));
   el.focus();
   return { success: true };
 };
@@ -227,10 +261,16 @@ const handleDragDrop = async (params: Record<string, unknown>) => {
 };
 
 const handleFileUpload = async (params: Record<string, unknown>) => {
-  const input = findElement(params.selector as string) as HTMLInputElement;
-  if (input.type !== 'file') throw new Error(`Element is not a file input: ${params.selector}`);
+  const input = resolveElement(targetOf(params)) as HTMLInputElement;
+  if (input.type !== 'file') throw new Error(`Element is not a file input: ${refOf(params)}`);
 
-  const filesData = params.files as { name: string; content: string; mimeType: string }[];
+  const filesData = params.files as { name: string; content: string; mimeType: string }[] | undefined;
+  if (!Array.isArray(filesData) || filesData.length === 0) {
+    // Only the CDP path can hand the page a real disk file.
+    throw new Error(
+      'Uploading by file path needs the debugger. Call ext_debugger_attach first, or pass files as base64 content.',
+    );
+  }
   const dataTransfer = new DataTransfer();
 
   for (const fileData of filesData) {
@@ -245,7 +285,7 @@ const handleFileUpload = async (params: Record<string, unknown>) => {
 
   input.files = dataTransfer.files;
   input.dispatchEvent(new Event('change', { bubbles: true }));
-  return { success: true };
+  return { success: true, count: filesData.length, via: 'data' };
 };
 
 /**
@@ -262,7 +302,7 @@ const handleFileUpload = async (params: Record<string, unknown>) => {
  * needed for stealth, ext_set_value is the reliable instant path.
  */
 const handleSetValue = async (params: Record<string, unknown>) => {
-  const el = findElement(params.selector as string);
+  const el = resolveElement(targetOf(params));
   const value = (params.value as string) ?? '';
   el.focus();
 
@@ -278,7 +318,7 @@ const handleSetValue = async (params: Record<string, unknown>) => {
     document.execCommand('insertText', false, value);
     el.dispatchEvent(new Event('input', { bubbles: true }));
   } else {
-    throw new Error(`Element is not an input, textarea, or contenteditable: ${params.selector}`);
+    throw new Error(`Element is not an input, textarea, or contenteditable: ${refOf(params)}`);
   }
 
   return { success: true, value };
@@ -327,7 +367,8 @@ const handleSubmitForm = async (params: Record<string, unknown>) => {
 
 // ─── Page Reading Handlers ──────────────────────────────────────────────────
 
-const STRIP_SELECTORS = 'script, style, noscript, svg, template, iframe, [aria-hidden="true"], [hidden]';
+// The presence overlay host is stripped so the agent never reads its own pill.
+const STRIP_SELECTORS = `script, style, noscript, svg, template, iframe, ${OVERLAY_HOST_TAG}, [aria-hidden="true"], [hidden]`;
 
 const cleanClone = (root: Element): Element => {
   const clone = root.cloneNode(true) as Element;
@@ -396,7 +437,7 @@ const handleQuerySelector = async (params: Record<string, unknown>) => {
 };
 
 const handleGetAttribute = async (params: Record<string, unknown>) => {
-  const el = findElement(params.selector as string);
+  const el = resolveElement(targetOf(params));
   const attrNames = params.attributes as string[];
   const attributes: Record<string, string | null> = {};
 
@@ -408,7 +449,7 @@ const handleGetAttribute = async (params: Record<string, unknown>) => {
 };
 
 const handleGetValue = async (params: Record<string, unknown>) => {
-  const el = findElement(params.selector as string) as HTMLInputElement;
+  const el = resolveElement(targetOf(params)) as HTMLInputElement;
   return {
     value: el.value ?? '',
     type: el.type || el.tagName.toLowerCase(),
@@ -491,7 +532,8 @@ const POINT_ATTRS = [
 const handleElementFromPoint = async (params: Record<string, unknown>) => {
   const x = params.x as number;
   const y = params.y as number;
-  const el = document.elementFromPoint(x, y) as HTMLElement | null;
+  // The overlay host sits on top of everything; look through it.
+  const el = (document.elementsFromPoint(x, y).find(n => !isOverlayNode(n)) as HTMLElement | undefined) ?? null;
   if (!el) return { found: false };
 
   const rect = el.getBoundingClientRect();
@@ -530,7 +572,7 @@ const handleInteractiveElements = async (params: Record<string, unknown>) => {
 
   for (const el of nodes) {
     if (elements.length >= limit) break;
-    if (!isVisible(el)) continue;
+    if (isOverlayNode(el) || !isVisible(el)) continue;
     const rect = el.getBoundingClientRect();
     if (rect.width < 1 || rect.height < 1) continue;
 
@@ -608,22 +650,42 @@ const handleClipboardWrite = async (params: Record<string, unknown>) => {
 
 // ─── Wait Handlers ──────────────────────────────────────────────────────────
 
+const normalizeText = (s: string): string => s.replace(/\s+/g, ' ').trim().toLowerCase();
+
+/**
+ * Wait for a selector to appear and/or for ANY of `text` to show up in the
+ * page's visible text. `matched` names what satisfied the wait so the model
+ * knows which branch it is on.
+ */
 const handleWaitFor = async (params: Record<string, unknown>) => {
-  const selector = params.selector as string;
+  const selector = typeof params.selector === 'string' && params.selector !== '' ? params.selector : undefined;
+  const rawText = params.text;
+  const texts = (Array.isArray(rawText) ? rawText : typeof rawText === 'string' ? [rawText] : [])
+    .map(t => String(t))
+    .filter(t => normalizeText(t) !== '');
+  if (!selector && texts.length === 0) throw new Error('Provide selector or text.');
+
   const timeout = (params.timeout as number) ?? 10000;
   const requireVisible = (params.visible as boolean) ?? false;
   const start = Date.now();
 
-  const check = (): boolean => {
-    const el = querySelectorSafe(selector);
-    if (!el) return false;
-    if (requireVisible && !isVisible(el)) return false;
-    return true;
+  const check = (): string | null => {
+    if (selector) {
+      const el = querySelectorSafe(selector);
+      if (el && (!requireVisible || isVisible(el))) return selector;
+    }
+    if (texts.length > 0 && document.body) {
+      const haystack = normalizeText(document.body.innerText);
+      const hit = texts.find(t => haystack.includes(normalizeText(t)));
+      if (hit !== undefined) return hit;
+    }
+    return null;
   };
 
-  if (check()) return { found: true, elapsed: Date.now() - start };
+  const first = check();
+  if (first !== null) return { found: true, elapsed: Date.now() - start, matched: first };
 
-  return new Promise<{ found: boolean; elapsed: number }>(resolve => {
+  return new Promise<{ found: boolean; elapsed: number; matched?: string }>(resolve => {
     let resolved = false;
     const cleanup = () => {
       resolved = true;
@@ -631,23 +693,19 @@ const handleWaitFor = async (params: Record<string, unknown>) => {
       clearInterval(pollId);
       clearTimeout(timeoutId);
     };
-
-    const observer = new MutationObserver(() => {
+    const attempt = () => {
       if (resolved) return;
-      if (check()) {
+      const matched = check();
+      if (matched !== null) {
         cleanup();
-        resolve({ found: true, elapsed: Date.now() - start });
+        resolve({ found: true, elapsed: Date.now() - start, matched });
       }
-    });
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+    };
 
-    const pollId = setInterval(() => {
-      if (resolved) return;
-      if (check()) {
-        cleanup();
-        resolve({ found: true, elapsed: Date.now() - start });
-      }
-    }, 200);
+    const observer = new MutationObserver(attempt);
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, characterData: true });
+
+    const pollId = setInterval(attempt, 200);
 
     const timeoutId = setTimeout(() => {
       if (resolved) return;
@@ -699,33 +757,59 @@ const handleWaitForNetworkIdle = async (params: Record<string, unknown>) => {
   });
 };
 
+// ─── Snapshot / uid Handlers (DOM fallback) ─────────────────────────────────
+
+const handleTakeSnapshot = async (params: Record<string, unknown>) =>
+  takeSnapshot({
+    verbose: params.verbose === true,
+    snapshotId: typeof params.snapshotId === 'number' ? params.snapshotId : undefined,
+  });
+
+const handleResolveUid = async (params: Record<string, unknown>) => resolveUid(String(params.uid ?? ''));
+
+const handleFind = async (params: Record<string, unknown>) => {
+  const query = String(params.query ?? '');
+  const limit = typeof params.limit === 'number' && params.limit > 0 ? params.limit : 10;
+  if (!hasSnapshot()) {
+    takeSnapshot({ snapshotId: typeof params.snapshotId === 'number' ? params.snapshotId : undefined });
+  }
+  return { elements: findInSnapshot(query, limit), snapshotId: currentSnapshotId() };
+};
+
 // ─── Command Dispatch ─────────────────────────────────────────────────────────
 
+// Keys come from the shared constants only: a literal here once silently
+// disagreed with the service worker and the command fell into "Unknown".
 const HANDLERS: Record<string, (params: Record<string, unknown>) => Promise<unknown>> = {
-  browser_click: handleClick,
-  browser_type: handleType,
-  browser_select: handleSelect,
-  browser_hover: handleHover,
-  browser_scroll: handleScroll,
-  browser_focus: handleFocus,
-  browser_keypress: handleKeypress,
-  browser_drag_drop: handleDragDrop,
-  browser_file_upload: handleFileUpload,
-  browser_set_value: handleSetValue,
-  browser_submit_form: handleSubmitForm,
-  browser_read_page: handleReadPage,
-  browser_query_selector: handleQuerySelector,
-  browser_get_attribute: handleGetAttribute,
-  browser_get_value: handleGetValue,
-  browser_get_page_info: handleGetPageInfo,
-  browser_storage_get: handleStorageGet,
-  browser_storage_set: handleStorageSet,
-  browser_clipboard_read: handleClipboardRead,
-  browser_clipboard_write: handleClipboardWrite,
-  browser_wait_for: handleWaitFor,
-  browser_wait_for_network_idle: handleWaitForNetworkIdle,
-  browser_element_from_point: handleElementFromPoint,
-  browser_get_interactive_elements: handleInteractiveElements,
+  [WolffishCommands.BROWSER_CLICK]: handleClick,
+  [WolffishCommands.BROWSER_TYPE]: handleType,
+  [WolffishCommands.BROWSER_SELECT]: handleSelect,
+  [WolffishCommands.BROWSER_HOVER]: handleHover,
+  [WolffishCommands.BROWSER_SCROLL]: handleScroll,
+  [WolffishCommands.BROWSER_FOCUS]: handleFocus,
+  [WolffishCommands.BROWSER_KEYPRESS]: handleKeypress,
+  [WolffishCommands.BROWSER_DRAG_DROP]: handleDragDrop,
+  [WolffishCommands.BROWSER_FILE_UPLOAD]: handleFileUpload,
+  [WolffishCommands.BROWSER_SET_VALUE]: handleSetValue,
+  [WolffishCommands.BROWSER_SUBMIT_FORM]: handleSubmitForm,
+  [WolffishCommands.BROWSER_READ_PAGE]: handleReadPage,
+  [WolffishCommands.BROWSER_QUERY_SELECTOR]: handleQuerySelector,
+  [WolffishCommands.BROWSER_GET_ATTRIBUTE]: handleGetAttribute,
+  [WolffishCommands.BROWSER_GET_VALUE]: handleGetValue,
+  [WolffishCommands.BROWSER_GET_PAGE_INFO]: handleGetPageInfo,
+  [WolffishCommands.BROWSER_STORAGE_GET]: handleStorageGet,
+  [WolffishCommands.BROWSER_STORAGE_SET]: handleStorageSet,
+  [WolffishCommands.BROWSER_CLIPBOARD_READ]: handleClipboardRead,
+  [WolffishCommands.BROWSER_CLIPBOARD_WRITE]: handleClipboardWrite,
+  [WolffishCommands.BROWSER_WAIT_FOR]: handleWaitFor,
+  [WolffishCommands.BROWSER_WAIT_FOR_NETWORK_IDLE]: handleWaitForNetworkIdle,
+  [WolffishCommands.BROWSER_ELEMENT_FROM_POINT]: handleElementFromPoint,
+  [WolffishCommands.BROWSER_GET_INTERACTIVE_ELEMENTS]: handleInteractiveElements,
+  [WolffishCommands.BROWSER_TAKE_SNAPSHOT]: handleTakeSnapshot,
+  [WolffishCommands.BROWSER_RESOLVE_UID]: handleResolveUid,
+  [WolffishCommands.BROWSER_FIND]: handleFind,
+  [WolffishCommands.BROWSER_FILL]: params => handleFill(params, resolveElement),
+  [WolffishCommands.BROWSER_FILL_FORM]: params => handleFillForm(params, resolveElement),
 };
 
 const handleCommand = async (command: WolffishCommand): Promise<WolffishResponse> => {
@@ -750,6 +834,18 @@ api.runtime.onMessage.addListener(
   (message: InternalMessage, _sender: unknown, sendResponse: (response: unknown) => void) => {
     if (message?.payload && 'type' in message.payload && message.payload.type === 'ping') {
       sendResponse({ type: 'pong' });
+      return true;
+    }
+
+    // Overlay ops are fire-and-forget cosmetics; never let one throw into the
+    // command path.
+    if (message?.payload && 'type' in message.payload && message.payload.type === 'overlay') {
+      try {
+        handleOverlay(message.payload as OverlayPayload);
+      } catch (err) {
+        log('overlay error:', err instanceof Error ? err.message : String(err));
+      }
+      sendResponse({ ok: true });
       return true;
     }
 

@@ -370,22 +370,6 @@ importers:
         specifier: workspace:*
         version: link:../../packages/vite-config
 
-  pages/offscreen:
-    dependencies:
-      '@extension/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
-      '@extension/storage':
-        specifier: workspace:*
-        version: link:../../packages/storage
-    devDependencies:
-      '@extension/tsconfig':
-        specifier: workspace:*
-        version: link:../../packages/tsconfig
-      '@extension/vite-config':
-        specifier: workspace:*
-        version: link:../../packages/vite-config
-
   pages/side-panel:
     dependencies:
       '@extension/i18n':

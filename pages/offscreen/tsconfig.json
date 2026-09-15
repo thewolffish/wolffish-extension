@@ -1,9 +1,0 @@
-{
-  "extends": "@extension/tsconfig/base",
-  "compilerOptions": {
-    "paths": {
-      "@src/*": ["./src/*"]
-    }
-  },
-  "include": ["src"]
-}

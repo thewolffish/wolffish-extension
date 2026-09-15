@@ -1,6 +1,6 @@
 {
   "name": "@extension/module-manager",
-  "version": "0.1.58",
+  "version": "0.1.59",
   "description": "Wolffish extension - module manager",
   "type": "module",
   "private": true,

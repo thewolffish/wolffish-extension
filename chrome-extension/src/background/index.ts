@@ -1,8 +1,13 @@
 import 'webextension-polyfill';
 import {
+  BRIDGE_TOKEN_FILE,
   COMMAND_TIMEOUT_MS,
   DEFAULT_PORT,
+  DIALOG_BLOCKED_COMMANDS,
   HEARTBEAT_INTERVAL_MS,
+  INPUT_COMMANDS,
+  READ_COMMANDS,
+  RECONNECT_ALARM_MINUTES,
   WolffishCommands,
   CONTENT_SCRIPT_COMMANDS,
   SERVICE_WORKER_COMMANDS,
@@ -24,6 +29,13 @@ import type {
   WolffishCommand,
   WolffishResponse,
   ConnectionStatusResponse,
+  BrowserDoctorResult,
+  BrowserDownloadParamsV2,
+  BrowserDownloadResultV2,
+  BrowserExecuteJsParamsV2,
+  BrowserScreenshotParamsV2,
+  BrowserScreenshotResultV2,
+  BrowserFileUploadParamsV2,
   BrowserNavigateParams,
   BrowserNavigateResult,
   BrowserBackParams,
@@ -43,17 +55,12 @@ import type {
   BrowserWindowOpenResult,
   BrowserWindowCloseParams,
   BrowserWindowResizeParams,
-  BrowserScreenshotParams,
-  BrowserScreenshotResult,
   BrowserPdfParams,
   BrowserPdfResult,
   BrowserCookiesGetParams,
   BrowserCookiesGetResult,
   BrowserCookiesSetParams,
   BrowserCookiesRemoveParams,
-  BrowserDownloadParams,
-  BrowserDownloadResult,
-  BrowserExecuteJsParams,
   BrowserExecuteJsResult,
   BrowserWaitParams,
   BrowserWaitForNavigationParams,
@@ -71,17 +78,47 @@ import {
   handleDebuggerDetach,
   handleDebuggerStatus,
   handleCDPClick,
-  handleCDPType,
-  handleCDPScroll,
+  handleCDPExecuteJs,
+  handleCDPFileUpload,
+  handleCDPFill,
+  handleCDPFillForm,
+  handleCDPFind,
+  handleCDPFocus,
+  handleCDPGetAttribute,
+  handleCDPGetValue,
   handleCDPHover,
   handleCDPKeypress,
+  handleCDPResolveUid,
+  handleCDPScreenshot,
+  handleCDPScroll,
+  handleCDPSelect,
+  handleCDPSetValue,
+  handleCDPTakeSnapshot,
+  handleCDPType,
+  handleEmulate,
+  handleGetNetworkRequest,
+  handleHandleDialog,
+  handleListConsoleMessages,
+  handleListNetworkRequests,
   handleMouseMove,
   handleMouseClick,
   handleMouseDown,
   handleMouseUp,
   handleMouseDrag,
-  getDebuggerState,
+  dialogOpenError,
+  hasSession,
+  overlayHooks,
+  sessionsReady,
 } from './debugger.js';
+import { captureBefore, waitAfterAction } from './aftermath.js';
+import type { ActionBefore } from './aftermath.js';
+import {
+  initOverlayDriver,
+  isOverlayEnabled,
+  markTabInUse,
+  overlayDriver,
+  setOverlayEnabled,
+} from './overlay-driver.js';
 import { handleHumanize } from './humanize-actions.js';
 import { getBrowserIdentity } from './identity.js';
 import {
@@ -133,7 +170,7 @@ const setStatus = (status: ConnectionStatus): void => {
 };
 
 const scheduleReconnect = (): void => {
-  api.alarms.create(RECONNECT_ALARM, { delayInMinutes: 0.05 });
+  api.alarms.create(RECONNECT_ALARM, { delayInMinutes: RECONNECT_ALARM_MINUTES });
 };
 
 api.alarms.onAlarm.addListener(alarm => {
@@ -180,12 +217,17 @@ const connectWebSocket = async (port: number): Promise<void> => {
     // Identity is async (storage + Firefox getBrowserInfo); keep the
     // extension_info → get_conversations ordering inside one chain. If the
     // socket drops meanwhile, sendToServer's readyState guard drops both.
-    void getBrowserIdentity()
-      .catch(() => null)
-      .then(identity => {
-        sendToServer({ type: 'extension_info', version: manifest.version, ...(identity ?? {}) });
-        sendToServer({ type: 'get_conversations' });
+    void Promise.all([getBrowserIdentity().catch(() => null), readBridgeToken()]).then(([identity, bridgeToken]) => {
+      sendToServer({
+        type: 'extension_info',
+        version: manifest.version,
+        extensionId: api.runtime.id,
+        bridgeToken,
+        overlayEnabled: isOverlayEnabled(),
+        ...(identity ?? {}),
       });
+      sendToServer({ type: 'get_conversations' });
+    });
   };
 
   ws.onclose = () => {
@@ -221,6 +263,23 @@ const connectWebSocket = async (port: number): Promise<void> => {
       logError('Failed to parse WebSocket message', err);
     }
   };
+};
+
+/**
+ * The app writes this file into the extension folder it already syncs on
+ * every launch, so possessing it proves this really is the app's own bundled
+ * extension and not some other local process dialling the same port. Absent
+ * on a pre-v2 build, which the server accepts and flags as legacy.
+ */
+const readBridgeToken = async (): Promise<string | null> => {
+  try {
+    const res = await fetch(api.runtime.getURL(BRIDGE_TOKEN_FILE));
+    if (!res.ok) return null;
+    const body = (await res.json()) as { token?: string };
+    return typeof body.token === 'string' && body.token ? body.token : null;
+  } catch {
+    return null;
+  }
 };
 
 const sendToServer = (data: unknown): void => {
@@ -478,24 +537,24 @@ const handleWindowResize = async (params: Record<string, unknown>): Promise<{ su
 
 // ─── Screenshot & PDF Handlers ──────────────────────────────────────────────
 
-const handleScreenshot = async (params: Record<string, unknown>): Promise<BrowserScreenshotResult> => {
-  const { format, quality, fullPage, selector } = params as unknown as BrowserScreenshotParams;
+const handleScreenshot = async (params: Record<string, unknown>): Promise<BrowserScreenshotResultV2> => {
+  const { format, quality, fullPage, selector, uid } = params as unknown as BrowserScreenshotParamsV2;
+  const tabId = await resolveTabId(params as { tabId?: number });
 
-  if (selector || fullPage) {
-    const tabId = await resolveTabId(params as { tabId?: number });
-    await ensureContentScriptInjected(tabId);
+  // With a session, CDP captures anything: full page beyond the viewport, a
+  // clip around one element, and a background tab (fromSurface) without
+  // stealing the user's foreground.
+  if (hasSession(tabId)) {
+    return handleCDPScreenshot({ ...params, tabId }) as Promise<BrowserScreenshotResultV2>;
+  }
 
-    const result = await sendToContentScript(tabId, {
-      source: 'service-worker',
-      target: 'content-script',
-      payload: {
-        id: crypto.randomUUID(),
-        type: WolffishCommands.BROWSER_SCREENSHOT,
-        params: params,
-      } as WolffishCommand,
-    });
-
-    return (result as WolffishResponse).data as BrowserScreenshotResult;
+  // Without one, captureVisibleTab is all there is — and it can only do the
+  // visible area of the active tab. Full-page and element captures used to be
+  // delegated to a content-script handler that never existed: the dispatcher
+  // wrapped the missing data as success, so the model got "captured" with no
+  // image and no way to tell. Say what is needed instead.
+  if (fullPage || selector || uid) {
+    throw new Error('Full-page and element screenshots need the debugger. Call ext_debugger_attach first.');
   }
 
   const captureFormat = format === 'jpeg' ? 'jpeg' : 'png';
@@ -507,7 +566,6 @@ const handleScreenshot = async (params: Record<string, unknown>): Promise<Browse
   // captureVisibleTab can only photograph the *active* tab of a window, so the
   // target has to be foregrounded first — otherwise the capture silently
   // returns whichever other tab happened to be in front.
-  const tabId = await resolveTabId(params as { tabId?: number });
   let tab = await api.tabs.get(tabId);
   if (!tab.active) {
     await api.tabs.update(tabId, { active: true });
@@ -515,13 +573,38 @@ const handleScreenshot = async (params: Record<string, unknown>): Promise<Browse
     tab = await api.tabs.get(tabId);
   }
 
-  const dataUrl = await api.tabs.captureVisibleTab(tab.windowId, options);
-  const win = await api.windows.get(tab.windowId);
+  await overlayHooks.beforeCapture(tabId).catch(() => {});
+  let dataUrl: string;
+  try {
+    dataUrl = await api.tabs.captureVisibleTab(tab.windowId, options);
+  } finally {
+    void overlayHooks.afterCapture(tabId).catch(() => {});
+  }
+
+  // The window's outer size is NOT the image's size: it includes the browser
+  // chrome and ignores the device pixel ratio, so every coordinate the model
+  // derived from it was off. Measure the page itself.
+  const metrics = await api.scripting
+    .executeScript({
+      target: { tabId },
+      func: () => ({ w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio || 1 }),
+      world: 'MAIN' as chrome.scripting.ExecutionWorld,
+    })
+    .then(r => r[0]?.result as { w: number; h: number; dpr: number } | undefined)
+    .catch(() => undefined);
+
+  const cssWidth = metrics?.w ?? 0;
+  const cssHeight = metrics?.h ?? 0;
+  const dpr = metrics?.dpr ?? 1;
 
   return {
     image: dataUrl,
-    width: win.width || 0,
-    height: win.height || 0,
+    width: Math.round(cssWidth * dpr),
+    height: Math.round(cssHeight * dpr),
+    cssWidth,
+    cssHeight,
+    dpr,
+    mode: 'visible',
   };
 };
 
@@ -592,29 +675,67 @@ const handleCookiesRemove = async (params: Record<string, unknown>): Promise<{ s
 
 // ─── Download Handler ───────────────────────────────────────────────────────
 
-const handleDownload = async (params: Record<string, unknown>): Promise<BrowserDownloadResult> => {
-  const { url, filename } = params as unknown as BrowserDownloadParams;
+const handleDownload = async (params: Record<string, unknown>): Promise<BrowserDownloadResultV2> => {
+  const { url, filename, waitMs } = params as unknown as BrowserDownloadParamsV2;
   const options: chrome.downloads.DownloadOptions = { url };
   if (filename !== undefined) {
     options.filename = filename;
   }
 
   const downloadId = await api.downloads.download(options);
+  const budget = Number.isFinite(waitMs) ? Math.max(0, waitMs as number) : 60_000;
+  if (budget === 0) return { downloadId, state: 'in_progress' };
 
-  return { downloadId };
+  // A download id alone told the model nothing: it could not say whether the
+  // file landed, where, or why it failed. Wait for the terminal state.
+  return new Promise<BrowserDownloadResultV2>(resolve => {
+    let settled = false;
+    const finish = (result: BrowserDownloadResultV2): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      api.downloads.onChanged.removeListener(listener);
+      resolve(result);
+    };
+
+    const report = async (): Promise<void> => {
+      const [item] = await api.downloads.search({ id: downloadId }).catch(() => []);
+      if (!item) return;
+      if (item.state === 'complete') finish({ downloadId, state: 'complete', filename: item.filename });
+      else if (item.state === 'interrupted') {
+        finish({ downloadId, state: 'interrupted', error: item.error ?? 'interrupted' });
+      }
+    };
+
+    const listener = (delta: chrome.downloads.DownloadDelta): void => {
+      if (delta.id === downloadId) void report();
+    };
+    api.downloads.onChanged.addListener(listener);
+    const timer = setTimeout(() => finish({ downloadId, state: 'in_progress' }), budget);
+    void report();
+  });
 };
 
 // ─── JavaScript Execution Handler ───────────────────────────────────────────
 
 const handleExecuteJs = async (params: Record<string, unknown>): Promise<BrowserExecuteJsResult> => {
-  const { code, world } = params as unknown as BrowserExecuteJsParams;
+  const { code, world } = params as unknown as BrowserExecuteJsParamsV2;
   const tabId = await resolveTabId(params as { tabId?: number });
 
+  // With a session, Runtime.evaluate handles expressions, await, and uid
+  // arguments resolved to live element handles.
+  if (hasSession(tabId)) {
+    return handleCDPExecuteJs({ ...params, tabId }) as Promise<BrowserExecuteJsResult>;
+  }
+
+  // MAIN, not ISOLATED: an isolated-world eval runs under the extension's MV3
+  // content-security policy, which forbids unsafe-eval — so the old default
+  // threw EvalError on every call that did not name a world.
   const results = await api.scripting.executeScript({
     target: { tabId },
     func: (source: string) => eval(source),
     args: [code],
-    world: (world || 'ISOLATED') as chrome.scripting.ExecutionWorld,
+    world: (world || 'MAIN') as chrome.scripting.ExecutionWorld,
   });
 
   return { result: results[0]?.result };
@@ -764,6 +885,134 @@ const handleGetUrl = async (params: Record<string, unknown>): Promise<BrowserGet
   return { url: tab.url || '', title: tab.title || '' };
 };
 
+/** Send one command to a tab's content script and unwrap its response. */
+const relayToContentScript = async (type: string, params: Record<string, unknown>): Promise<unknown> => {
+  const tabId = await resolveTabId(params as { tabId?: number });
+  await ensureContentScriptInjected(tabId);
+  const result = (await sendToContentScript(tabId, {
+    source: 'service-worker',
+    target: 'content-script',
+    payload: { id: generateId(), type, params } as WolffishCommand,
+  })) as WolffishResponse;
+  if (!result?.success) throw new Error(result?.error ?? `${type} failed`);
+  return result.data;
+};
+
+// ─── Readiness Probe ────────────────────────────────────────────────────────
+
+/**
+ * What this browser lets Wolffish do, asked of the browser itself. The app
+ * composes findings from this plus what it knows locally (installed browsers,
+ * folder versions, port state), so everything here is a raw fact, never a
+ * verdict — the phrasing the user reads lives in the app.
+ *
+ * The one that bites most often is site access: a user who set the extension
+ * to "On click" gets "Cannot access contents of url" from every command, which
+ * reads like a bug rather than a setting.
+ */
+const handleDoctor = async (params: Record<string, unknown>): Promise<BrowserDoctorResult> => {
+  const manifest = api.runtime.getManifest();
+
+  const maybe = async <T>(fn: () => Promise<T> | T, fallback: T): Promise<T> => {
+    try {
+      return await fn();
+    } catch {
+      return fallback;
+    }
+  };
+
+  const siteAccessAllUrls = await maybe(
+    () => api.permissions?.contains({ origins: ['<all_urls>'] }) ?? Promise.resolve(null),
+    null as boolean | null,
+  );
+  const incognitoAllowed = await maybe(
+    () => api.extension?.isAllowedIncognitoAccess?.() ?? Promise.resolve(null),
+    null as boolean | null,
+  );
+  const fileSchemeAllowed = await maybe(
+    () => api.extension?.isAllowedFileSchemeAccess?.() ?? Promise.resolve(null),
+    null as boolean | null,
+  );
+  const notifications = await maybe(
+    async () => ((await api.notifications?.getPermissionLevel?.()) ?? null) as 'granted' | 'denied' | null,
+    null as 'granted' | 'denied' | null,
+  );
+  const self = await maybe(
+    async () => (await api.management?.getSelf?.()) ?? null,
+    null as chrome.management.ExtensionInfo | null,
+  );
+  const targets = await maybe(
+    async () => (await api.debugger?.getTargets?.()) ?? [],
+    [] as chrome.debugger.TargetInfo[],
+  );
+
+  // A scripting ping on the tab the model is actually working in: the only
+  // probe that proves the content script can run *here*, policy included.
+  let scriptable: BrowserDoctorResult['scriptable'] = null;
+  let policyBlocked = false;
+  try {
+    const tabId = await resolveTabId(params as { tabId?: number });
+    const tab = await api.tabs.get(tabId).catch(() => null);
+    try {
+      await api.scripting.executeScript({ target: { tabId }, func: () => true });
+      scriptable = { tabId, ok: true, url: tab?.url };
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      policyBlocked = /policy|ExtensionSettings|blocked by/i.test(error);
+      scriptable = { tabId, ok: false, error, url: tab?.url };
+    }
+  } catch {
+    // No resolvable tab (a brand-new browser with nothing open yet).
+  }
+
+  return {
+    extension: {
+      id: api.runtime.id,
+      version: manifest.version,
+      manifestPermissions: manifest.permissions ?? [],
+      hostPermissions: manifest.host_permissions ?? [],
+    },
+    siteAccessAllUrls,
+    incognitoAllowed,
+    fileSchemeAllowed,
+    notifications,
+    installType: self?.installType ?? null,
+    enabled: self?.enabled ?? null,
+    mayDisable: self?.mayDisable ?? null,
+    apis: {
+      debugger: typeof api.debugger !== 'undefined',
+      tabGroups: typeof api.tabGroups !== 'undefined',
+      sidePanel: typeof api.sidePanel !== 'undefined',
+      scripting: typeof api.scripting !== 'undefined',
+      downloads: typeof api.downloads !== 'undefined',
+    },
+    debuggerAttachedTabs: targets.filter(t => t.attached && typeof t.tabId === 'number').map(t => t.tabId as number),
+    scriptable,
+    policyBlocked,
+    overlayEnabled: isOverlayEnabled(),
+  };
+};
+
+/**
+ * File upload splits by source: real disk paths can only be handed to the page
+ * through CDP (DOM.setFileInputFiles), while base64 content is built into a
+ * DataTransfer in the page and works with no session at all.
+ */
+const handleFileUpload = async (params: Record<string, unknown>): Promise<unknown> => {
+  const { filePaths } = params as unknown as BrowserFileUploadParamsV2;
+  await sessionsReady;
+  const tabId = await resolveTabId(params as { tabId?: number });
+  if (filePaths && filePaths.length > 0) {
+    if (!hasSession(tabId)) {
+      throw new Error(
+        'Uploading by file path needs the debugger. Call ext_debugger_attach first, or pass files as base64 content.',
+      );
+    }
+    return handleCDPFileUpload({ ...params, tabId });
+  }
+  return relayToContentScript(WolffishCommands.BROWSER_FILE_UPLOAD, { ...params, tabId });
+};
+
 // ─── Command Router ─────────────────────────────────────────────────────────
 
 const SERVICE_WORKER_HANDLERS: Record<string, (params: Record<string, unknown>) => Promise<unknown>> = {
@@ -802,6 +1051,15 @@ const SERVICE_WORKER_HANDLERS: Record<string, (params: Record<string, unknown>) 
   [WolffishCommands.BROWSER_MOUSE_UP]: handleMouseUp,
   [WolffishCommands.BROWSER_MOUSE_DRAG]: handleMouseDrag,
   [WolffishCommands.HUMANIZE]: handleHumanize,
+  [WolffishCommands.BROWSER_FILE_UPLOAD]: handleFileUpload,
+  // CDP-only observation: each answers with a deterministic "needs the
+  // debugger" error when the resolved tab has no session.
+  [WolffishCommands.BROWSER_LIST_NETWORK_REQUESTS]: handleListNetworkRequests,
+  [WolffishCommands.BROWSER_GET_NETWORK_REQUEST]: handleGetNetworkRequest,
+  [WolffishCommands.BROWSER_LIST_CONSOLE_MESSAGES]: handleListConsoleMessages,
+  [WolffishCommands.BROWSER_HANDLE_DIALOG]: handleHandleDialog,
+  [WolffishCommands.BROWSER_EMULATE]: handleEmulate,
+  [WolffishCommands.BROWSER_DOCTOR]: handleDoctor,
 };
 
 const CDP_HANDLERS: Record<string, (params: Record<string, unknown>) => Promise<unknown>> = {
@@ -810,6 +1068,19 @@ const CDP_HANDLERS: Record<string, (params: Record<string, unknown>) => Promise<
   [WolffishCommands.BROWSER_SCROLL]: handleCDPScroll,
   [WolffishCommands.BROWSER_HOVER]: handleCDPHover,
   [WolffishCommands.BROWSER_KEYPRESS]: handleCDPKeypress,
+  // The v2 pairs: an accessibility-tree snapshot and uid-addressed actions
+  // through CDP, each with a DOM twin in the content script for Firefox and
+  // for pages the debugger cannot attach to.
+  [WolffishCommands.BROWSER_TAKE_SNAPSHOT]: handleCDPTakeSnapshot,
+  [WolffishCommands.BROWSER_RESOLVE_UID]: handleCDPResolveUid,
+  [WolffishCommands.BROWSER_FIND]: handleCDPFind,
+  [WolffishCommands.BROWSER_FILL]: handleCDPFill,
+  [WolffishCommands.BROWSER_FILL_FORM]: handleCDPFillForm,
+  [WolffishCommands.BROWSER_SET_VALUE]: handleCDPSetValue,
+  [WolffishCommands.BROWSER_GET_VALUE]: handleCDPGetValue,
+  [WolffishCommands.BROWSER_GET_ATTRIBUTE]: handleCDPGetAttribute,
+  [WolffishCommands.BROWSER_FOCUS]: handleCDPFocus,
+  [WolffishCommands.BROWSER_SELECT]: handleCDPSelect,
 };
 
 // ─── Response Relay ─────────────────────────────────────────────────────────
@@ -820,11 +1091,63 @@ const sendResponseToServer = (response: WolffishResponse): void => {
 
 // ─── Command Dispatcher ─────────────────────────────────────────────────────
 
+/**
+ * Does this command touch a page, and how? Drives both the on-page overlay
+ * (cursor vs pill) and whether the result gets the post-action aftermath.
+ */
+const commandKind = (type: string): 'input' | 'read' | null => {
+  if (INPUT_COMMANDS.has(type)) return 'input';
+  if (READ_COMMANDS.has(type)) return 'read';
+  return null;
+};
+
+/** Commands whose tab is incidental — marking them in-use would light an overlay on a tab nobody is driving. */
+const TAB_AGNOSTIC = new Set<string>([
+  WolffishCommands.BROWSER_TABS_LIST,
+  WolffishCommands.BROWSER_WINDOWS_LIST,
+  WolffishCommands.BROWSER_COOKIES_GET,
+  WolffishCommands.BROWSER_COOKIES_SET,
+  WolffishCommands.BROWSER_COOKIES_REMOVE,
+  WolffishCommands.BROWSER_NOTIFY,
+  WolffishCommands.BROWSER_DOWNLOAD,
+  WolffishCommands.BROWSER_SET_ACTIVITY,
+  WolffishCommands.DEBUGGER_STATUS,
+  WolffishCommands.BROWSER_DOCTOR,
+]);
+
 const handleCommand = async (command: WolffishCommand): Promise<void> => {
   log('←', command.type, command.params);
 
   try {
     let response: WolffishResponse;
+    const kind = commandKind(command.type);
+    let tabId: number | null = null;
+
+    // Which tab is this for? Needed before the handler runs so the dialog gate
+    // and the overlay both speak about the right page. Never fatal: a command
+    // with no resolvable tab just skips both.
+    if (!TAB_AGNOSTIC.has(command.type)) {
+      tabId = await resolveTabId(command.params as { tabId?: number }).catch(() => null);
+    }
+
+    // A JavaScript dialog freezes its page: the renderer will not run script,
+    // paint, or accept input until it is answered. Anything that would touch
+    // the page is answered with what to do instead, and the app marks it
+    // non-retryable — three identical retries against a modal help nobody.
+    if (tabId !== null && DIALOG_BLOCKED_COMMANDS.has(command.type)) {
+      const blocked = dialogOpenError(tabId);
+      if (blocked) {
+        sendResponseToServer(makeErrorResponse(command.id, blocked));
+        log('→', command.type, 'blocked by dialog');
+        return;
+      }
+    }
+
+    if (tabId !== null && kind) void markTabInUse(tabId, kind);
+
+    // The page's state BEFORE the action: a click handler that appends a node
+    // runs synchronously, so a comparison made only afterwards sees nothing.
+    const before = tabId !== null && INPUT_COMMANDS.has(command.type) ? await captureBefore(tabId) : undefined;
 
     if (SERVICE_WORKER_COMMANDS.has(command.type)) {
       const handler = SERVICE_WORKER_HANDLERS[command.type];
@@ -832,39 +1155,52 @@ const handleCommand = async (command: WolffishCommand): Promise<void> => {
         response = makeErrorResponse(command.id, `No handler for command: ${command.type}`);
       } else {
         const data = await withTimeout(handler(command.params));
-        response = makeResponse(command.id, data);
+        response = makeResponse(command.id, await decorate(command.type, tabId, data, before));
       }
     } else if (CONTENT_SCRIPT_COMMANDS.has(command.type)) {
-      // CDP routing: if debugger is attached and this is an interaction command, use CDP
-      const debuggerState = getDebuggerState();
-      if (debuggerState.attached && DEBUGGER_ROUTABLE_COMMANDS.has(command.type)) {
+      // CDP routing: with a session on THIS tab, the trusted path runs; a CDP
+      // failure falls through to the content script, which implements the same
+      // contract with synthetic events.
+      if (tabId !== null && hasSession(tabId) && DEBUGGER_ROUTABLE_COMMANDS.has(command.type)) {
         const cdpHandler = CDP_HANDLERS[command.type];
         if (cdpHandler) {
           try {
-            const data = await withTimeout(cdpHandler(command.params));
-            response = makeResponse(command.id, data);
+            const data = await withTimeout(cdpHandler({ ...command.params, tabId }));
+            response = makeResponse(command.id, await decorate(command.type, tabId, data, before));
             log('→', command.type, 'success (CDP)');
             sendResponseToServer(response);
             return;
           } catch (cdpErr) {
-            log('CDP fallback:', command.type, cdpErr instanceof Error ? cdpErr.message : String(cdpErr));
-            // Fall through to content script path
+            const message = cdpErr instanceof Error ? cdpErr.message : String(cdpErr);
+            // A uid names a node in the CDP snapshot that produced it; the
+            // content script keeps its own, unrelated map. Falling through
+            // would answer a real CDP failure with "No snapshot for this tab",
+            // which sends the model off fixing the wrong thing.
+            if (typeof command.params?.uid === 'string' || typeof command.params?.from_uid === 'string') {
+              sendResponseToServer(makeErrorResponse(command.id, message));
+              log('→', command.type, 'CDP error (uid target, no fallback):', message);
+              return;
+            }
+            log('CDP fallback:', command.type, message);
           }
         }
       }
 
-      const tabId = await resolveTabId(command.params as { tabId?: number });
-      await ensureContentScriptInjected(tabId);
+      const target = tabId ?? (await resolveTabId(command.params as { tabId?: number }));
+      await ensureContentScriptInjected(target);
 
-      const result = await withTimeout(
-        sendToContentScript(tabId, {
+      const result = (await withTimeout(
+        sendToContentScript(target, {
           source: 'service-worker',
           target: 'content-script',
           payload: command,
         }),
-      );
+      )) as WolffishResponse;
 
-      response = result as WolffishResponse;
+      response =
+        result?.success === true
+          ? makeResponse(command.id, await decorate(command.type, target, result.data, before))
+          : result;
     } else {
       response = makeErrorResponse(command.id, `Unknown command: ${command.type}`);
     }
@@ -877,6 +1213,22 @@ const handleCommand = async (command: WolffishCommand): Promise<void> => {
     log('→', command.type, 'error:', response.error);
     sendResponseToServer(response);
   }
+};
+
+/**
+ * Every action that changes the page answers with what the page did: whether
+ * it navigated, or whether anything in the DOM moved at all. "No visible
+ * change" after a click is the single most useful signal the model can get —
+ * it is the difference between reporting success and re-aiming.
+ */
+const decorate = async (type: string, tabId: number | null, data: unknown, before?: ActionBefore): Promise<unknown> => {
+  if (tabId === null || !INPUT_COMMANDS.has(type)) return data;
+  const aftermath = await waitAfterAction(tabId, before);
+  if (!aftermath.navigated && aftermath.domChanged === undefined) return data;
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    return { ...(data as Record<string, unknown>), ...aftermath };
+  }
+  return data;
 };
 
 // ─── Persistent Cache ───────────────────────────────────────────────────────
@@ -945,6 +1297,13 @@ const handleWolffishEvent = (event: { type: 'event'; event: string; data: unknow
     const { port } = event.data as { port: number };
     log(`Port update received: ${port}`);
     wolffishConnectionStorage.set({ port });
+    return;
+  }
+
+  if (event.event === 'overlay_config') {
+    const { enabled } = event.data as { enabled: boolean };
+    log(`Overlay switch from app: ${enabled}`);
+    void setOverlayEnabled(enabled !== false);
     return;
   }
 
@@ -1104,6 +1463,20 @@ cache
     }
   })
   .catch(() => {});
+
+// The CDP layer draws the shadow cursor through these hooks; without them it
+// runs exactly as before, silently.
+overlayHooks.beforeCapture = overlayDriver.beforeCapture;
+overlayHooks.afterCapture = overlayDriver.afterCapture;
+overlayHooks.cursor = overlayDriver.cursor;
+overlayHooks.pulse = overlayDriver.pulse;
+overlayHooks.target = overlayDriver.target;
+
+void initOverlayDriver();
+// Sessions are rebuilt from storage + chrome.debugger.getTargets() before any
+// command runs, so a restarted worker never reports "not attached" for a tab
+// Chrome is still showing the debugging banner for.
+void sessionsReady;
 
 startConnection().catch(err => logError('Failed to start connection:', err));
 

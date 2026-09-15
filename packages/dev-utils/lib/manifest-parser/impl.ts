@@ -21,7 +21,10 @@ const convertToFirefoxCompatibleManifest = (manifest: ManifestType) => {
   manifestCopy.content_security_policy = {
     extension_pages: "script-src 'self'; object-src 'self'",
   };
-  manifestCopy.permissions = (manifestCopy.permissions as string[]).filter(value => value !== 'sidePanel');
+  // Firefox rejects a manifest that names permissions it does not implement;
+  // these are the Chromium-only ones the extension degrades without.
+  const CHROMIUM_ONLY = new Set(['sidePanel', 'debugger', 'tabGroups', 'identity', 'identity.email']);
+  manifestCopy.permissions = (manifestCopy.permissions as string[]).filter(value => !CHROMIUM_ONLY.has(value));
 
   delete manifestCopy.options_page;
   delete manifestCopy.side_panel;
