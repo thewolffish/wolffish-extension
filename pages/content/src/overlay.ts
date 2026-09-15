@@ -31,10 +31,16 @@ const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif";
 
 const STYLE =
   ':host{position:fixed;inset:0;z-index:2147483647;pointer-events:none;display:block}' +
+  // The desktop glow can sit at 42% opacity because it floats over a darkened
+  // screen. A web page is not ours: the pill has to carry its own contrast on
+  // a white article, a photo, or a dark app, so it is near-opaque with solid
+  // text and a shadow to lift it off the page. Verified on a white page and
+  // on reddit, where the translucent version was unreadable.
   '#chip{position:fixed;top:10px;left:50%;transform:translateX(-50%);display:none;align-items:center;gap:8px;' +
-  'padding:7px 16px;border-radius:999px;background:rgba(8,15,33,.42);' +
+  'padding:7px 16px;border-radius:999px;background:rgba(11,18,38,.94);' +
   'backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);' +
-  'border:1px solid rgba(96,165,250,.3);color:rgba(226,236,255,.62);' +
+  'box-shadow:0 4px 16px rgba(0,0,0,.28);' +
+  'border:1px solid rgba(120,170,255,.45);color:#EAF1FF;' +
   `font:500 13px/1.2 ${FONT};letter-spacing:.2px;white-space:nowrap;max-width:calc(100vw - 40px);` +
   'overflow:hidden;text-overflow:ellipsis;opacity:0}' +
   '#chip.show{display:flex;animation:fi .45s ease-out forwards}' +
