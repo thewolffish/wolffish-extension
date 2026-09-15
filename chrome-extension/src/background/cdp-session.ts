@@ -32,6 +32,8 @@ interface DialogState {
 interface NetworkEntry {
   reqid: number;
   requestId: string;
+  /** The document this request belongs to — lets a navigation keep its own document request. */
+  loaderId: string;
   method: string;
   url: string;
   headers: Record<string, string>;
@@ -282,14 +284,23 @@ const pushConsole = (session: Session, entry: ConsoleMessageEntry): void => {
   while (session.console.length > RING_BUFFER_SIZE) session.console.shift();
 };
 
-/** A new document: every uid, request and message belonged to the old one. */
+/**
+ * A new document: every uid and message belonged to the old one.
+ *
+ * Network is the exception. `Page.frameNavigated` arrives AFTER the document
+ * request has already been recorded, so clearing everything threw away the
+ * very request that caused the navigation — and on a page with no
+ * subresources (example.com) that left the list permanently empty. Keep the
+ * rows that belong to the incoming document and drop the rest.
+ */
 const resetForNavigation = (session: Session, loaderId: string): void => {
   session.loaderId = loaderId;
   session.uidMap.clear();
   session.uidByNode.clear();
   session.snapshotNodes = [];
-  session.network = [];
+  session.network = session.network.filter(e => e.loaderId === loaderId);
   session.networkById.clear();
+  for (const entry of session.network) session.networkById.set(entry.requestId, entry);
   session.console = [];
   session.dialog = null;
 };
@@ -424,6 +435,7 @@ const onLogEntry = (session: Session, p: Record<string, unknown>): void => {
 const onRequestWillBeSent = (session: Session, p: Record<string, unknown>): void => {
   const e = p as {
     requestId: string;
+    loaderId?: string;
     request: { url: string; method: string; headers: Record<string, string>; postData?: string };
     timestamp: number;
     type?: string;
@@ -442,6 +454,7 @@ const onRequestWillBeSent = (session: Session, p: Record<string, unknown>): void
   pushNetwork(session, {
     reqid: ++session.reqSeq,
     requestId: e.requestId,
+    loaderId: e.loaderId ?? '',
     method: e.request.method,
     url: e.request.url,
     headers: e.request.headers ?? {},
