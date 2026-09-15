@@ -109,18 +109,12 @@ import {
   hasSession,
   overlayHooks,
   sessionsReady,
-} from './debugger.js';
-import { captureBefore, waitAfterAction } from './aftermath.js';
-import type { ActionBefore } from './aftermath.js';
-import {
-  initOverlayDriver,
-  isOverlayEnabled,
-  markTabInUse,
-  overlayDriver,
-  setOverlayEnabled,
-} from './overlay-driver.js';
-import { handleHumanize } from './humanize-actions.js';
-import { getBrowserIdentity } from './identity.js';
+} from './debugger';
+import { captureBefore, waitAfterAction } from './aftermath';
+import type { ActionBefore } from './aftermath';
+import { initOverlayDriver, isOverlayEnabled, markTabInUse, overlayDriver, setOverlayEnabled } from './overlay-driver';
+import { handleHumanize } from './humanize-actions';
+import { getBrowserIdentity } from './identity';
 import {
   adoptTab,
   ensureWorkspaceTab,
@@ -128,7 +122,7 @@ import {
   openWorkspaceTab,
   rememberWorkspaceTab,
   setActivity,
-} from './workspace.js';
+} from './workspace';
 
 const api = globalThis.chrome;
 

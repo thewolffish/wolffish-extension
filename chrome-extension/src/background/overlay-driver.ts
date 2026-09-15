@@ -25,7 +25,7 @@ import {
   log,
 } from '@extension/shared';
 import type { OverlayPayload } from '@extension/shared';
-import { getActivityLabel } from './workspace.js';
+import { getActivityLabel } from './workspace';
 
 const api = globalThis.chrome;
 

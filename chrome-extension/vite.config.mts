@@ -47,6 +47,19 @@ export default defineConfig({
     watch: watchOption,
     rollupOptions: {
       external: ['chrome'],
+      onwarn(warning, defaultHandler) {
+        // "use client" is an RSC concern (react-error-boundary ships it). It carries no
+        // meaning in a bundled MV3 service worker, and Rollup strips it either way.
+        if (warning.code === 'MODULE_LEVEL_DIRECTIVE') return;
+
+        // The eval in background/index.ts is deliberate: it is the MAIN-world
+        // executeScript payload, because an ISOLATED-world eval is refused by the
+        // extension CSP. Scoped to that one file so a stray eval elsewhere still warns.
+        const evalSite = warning.id ?? warning.loc?.file ?? '';
+        if (warning.code === 'EVAL' && evalSite.includes('background/index.ts')) return;
+
+        defaultHandler(warning);
+      },
     },
   },
 });

@@ -1,7 +1,7 @@
 import type { HumanizeIntensity, HumanizeResult } from '@extension/shared';
 import { log, resolveTabId } from '@extension/shared';
-import { getCursorPosition, getDebuggerState, handleMouseMove } from './debugger.js';
-import { gaussianDelay, sleep } from './gaussian.js';
+import { getCursorPosition, getDebuggerState, handleMouseMove } from './debugger';
+import { gaussianDelay, sleep } from './gaussian';
 
 const api = globalThis.chrome;
 

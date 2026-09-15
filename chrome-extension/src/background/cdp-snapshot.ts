@@ -1,7 +1,7 @@
 import type { BrowserTakeSnapshotResult, FoundElement } from '@extension/shared';
-import { nextSnapshotId, sendCDP } from './cdp-session.js';
-import type { Session, SnapshotNode, UidRef } from './cdp-session.js';
-import { center, nodeRect } from './cdp-dom.js';
+import { nextSnapshotId, sendCDP } from './cdp-session';
+import type { Session, SnapshotNode, UidRef } from './cdp-session';
+import { center, nodeRect } from './cdp-dom';
 
 const api = globalThis.chrome;
 

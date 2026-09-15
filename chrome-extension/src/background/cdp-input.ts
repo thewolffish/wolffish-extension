@@ -1,7 +1,7 @@
-import { sendCDP } from './cdp-session.js';
-import type { Session } from './cdp-session.js';
-import { gaussianDelay, sleep } from './gaussian.js';
-import { overlayHooks, postCursor } from './overlay-hooks.js';
+import { sendCDP } from './cdp-session';
+import type { Session } from './cdp-session';
+import { gaussianDelay, sleep } from './gaussian';
+import { overlayHooks, postCursor } from './overlay-hooks';
 
 type MouseButton = 'left' | 'right' | 'middle';
 

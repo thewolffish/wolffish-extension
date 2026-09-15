@@ -83,10 +83,10 @@ import {
   setFilesInPage,
   setValueInPage,
   unwrap,
-} from './cdp-dom.js';
-import type { EvalResult } from './cdp-dom.js';
-import { cdpClick, cdpMove, cdpPress, cdpRelease, cdpWheel, pressKey, typeText } from './cdp-input.js';
-import type { MouseButton } from './cdp-input.js';
+} from './cdp-dom';
+import type { EvalResult } from './cdp-dom';
+import { cdpClick, cdpMove, cdpPress, cdpRelease, cdpWheel, pressKey, typeText } from './cdp-input';
+import type { MouseButton } from './cdp-input';
 import {
   assertNoDialog,
   attachTab,
@@ -101,12 +101,12 @@ import {
   requireSession,
   sendCDP,
   sessionsReady,
-} from './cdp-session.js';
-import type { NetworkEntry, Session } from './cdp-session.js';
-import { findInSnapshot, lookupUid, takeSnapshot, withUidErrors } from './cdp-snapshot.js';
-import { gaussianDelay, sleep } from './gaussian.js';
-import { overlayHooks, postCursor } from './overlay-hooks.js';
-import type { Rect } from './overlay-hooks.js';
+} from './cdp-session';
+import type { NetworkEntry, Session } from './cdp-session';
+import { findInSnapshot, lookupUid, takeSnapshot, withUidErrors } from './cdp-snapshot';
+import { gaussianDelay, sleep } from './gaussian';
+import { overlayHooks, postCursor } from './overlay-hooks';
+import type { Rect } from './overlay-hooks';
 
 const api = globalThis.chrome;
 

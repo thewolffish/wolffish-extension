@@ -1,6 +1,6 @@
 import type { FillKind } from '@extension/shared';
-import { sendCDP } from './cdp-session.js';
-import type { Rect } from './overlay-hooks.js';
+import { sendCDP } from './cdp-session';
+import type { Rect } from './overlay-hooks';
 
 // ─── Remote-object plumbing ──────────────────────────────────────────────────
 

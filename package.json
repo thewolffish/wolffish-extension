@@ -1,6 +1,6 @@
 {
   "name": "wolffish-extension",
-  "version": "0.1.62",
+  "version": "0.1.63",
   "description": "Browser capability for the Wolffish AI agent",
   "license": "MIT",
   "author": "Younes Alturkey",
@@ -95,5 +95,10 @@
   "packageManager": "pnpm@10.11.0",
   "engines": {
     "node": ">=22.15.1"
+  },
+  "pnpm": {
+    "overrides": {
+      "caniuse-lite": "^1.0.30001810"
+    }
   }
 }
