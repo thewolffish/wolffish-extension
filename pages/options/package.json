@@ -1,7 +1,7 @@
 {
-  "name": "@wolffish/content-script",
+  "name": "@wolffish/options",
   "version": "0.1.65",
-  "description": "Wolffish extension - content script",
+  "description": "Wolffish extension - settings page",
   "type": "module",
   "private": true,
   "sideEffects": true,
@@ -9,12 +9,11 @@
     "dist/**"
   ],
   "scripts": {
-    "clean:bundle": "rimraf dist",
     "clean:node_modules": "pnpx rimraf node_modules",
     "clean:turbo": "rimraf .turbo",
-    "clean": "pnpm clean:bundle && pnpm clean:turbo && pnpm clean:node_modules",
-    "build": "tsx build.mts",
-    "dev": "tsx build.mts",
+    "clean": "pnpm clean:turbo && pnpm clean:node_modules",
+    "build": "vite build",
+    "dev": "vite build --mode development",
     "lint": "eslint .",
     "lint:fix": "pnpm lint --fix",
     "format": "prettier . --write --ignore-path ../../.prettierignore",
@@ -23,11 +22,18 @@
   "dependencies": {
     "@extension/shared": "workspace:*",
     "@extension/storage": "workspace:*",
-    "@extension/env": "workspace:*"
+    "@extension/i18n": "workspace:*",
+    "@extension/ui": "workspace:*"
   },
   "devDependencies": {
-    "@extension/hmr": "workspace:*",
+    "@extension/tailwindcss-config": "workspace:*",
     "@extension/tsconfig": "workspace:*",
     "@extension/vite-config": "workspace:*"
+  },
+  "postcss": {
+    "plugins": {
+      "tailwindcss": {},
+      "autoprefixer": {}
+    }
   }
 }

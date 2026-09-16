@@ -1,0 +1,247 @@
+/* The settings page. Same palette, fonts and light/dark rule as the side
+   panel — one product, two surfaces — but laid out for a full tab: a narrow
+   centred column of cards instead of a 360px strip. */
+
+.settings {
+  --flip: 1;
+  min-height: 100vh;
+  padding: 44px 24px 64px;
+  font-family: 'IBM Plex Sans Arabic', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+.settings[dir='rtl'] {
+  --flip: -1;
+}
+
+.settings.dark {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --border: #2a313c;
+  --text: #ffffff;
+  --muted: #8b95a7;
+  --chip: #21262d;
+  --hover: rgba(255, 255, 255, 0.06);
+  --track: #2a313c;
+}
+
+.settings.light {
+  --bg: #f0f4f8;
+  --surface: #ffffff;
+  --border: #d5dde5;
+  --text: #0d1117;
+  --muted: #5b6778;
+  --chip: #e1e7ed;
+  --hover: rgba(13, 17, 23, 0.05);
+  --track: #c7d1dc;
+}
+
+.shell {
+  max-width: 640px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* ─── Header ─── */
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 2px 4px;
+}
+
+.head-logo {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+}
+
+.head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.head-title {
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.head-sub {
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.head-version {
+  margin-inline-start: auto;
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background-color: var(--chip);
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* ─── Cards ─── */
+
+.card {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.card-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.row + .row {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.row-label {
+  display: flex;
+  align-items: center;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.row-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-inline-end: 8px;
+}
+
+.status-dot.ok {
+  background-color: #57ce51;
+}
+
+.status-dot.warn {
+  background-color: #f59e0b;
+}
+
+/* ─── Controls ─── */
+
+.switch {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 999px;
+  background-color: var(--track);
+  cursor: pointer;
+  padding: 0;
+}
+
+.switch.on {
+  background-color: #3b82f6;
+}
+
+.switch-knob {
+  position: absolute;
+  top: 3px;
+  inset-inline-start: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background-color: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: transform 0.18s ease;
+}
+
+.switch.on .switch-knob {
+  transform: translateX(calc(var(--flip) * 18px));
+}
+
+.btn {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  border-radius: 8px;
+  padding: 6px 13px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.btn:hover {
+  background-color: var(--hover);
+}
+
+.btn.primary {
+  border-color: #3b82f6;
+  color: #3b82f6;
+}
+
+.btn.primary:hover {
+  background-color: rgba(59, 130, 246, 0.12);
+}
+
+.switch:focus-visible,
+.btn:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* ─── Narrow windows (the embedded options view is ~500px) ─── */
+
+@media (max-width: 520px) {
+  .settings {
+    padding: 28px 16px 40px;
+  }
+
+  .row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .switch-knob {
+    transition: none;
+  }
+}

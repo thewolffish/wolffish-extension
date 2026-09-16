@@ -373,6 +373,31 @@ importers:
         specifier: workspace:*
         version: link:../../packages/vite-config
 
+  pages/options:
+    dependencies:
+      '@extension/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
+      '@extension/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@extension/storage':
+        specifier: workspace:*
+        version: link:../../packages/storage
+      '@extension/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+    devDependencies:
+      '@extension/tailwindcss-config':
+        specifier: workspace:*
+        version: link:../../packages/tailwindcss-config
+      '@extension/tsconfig':
+        specifier: workspace:*
+        version: link:../../packages/tsconfig
+      '@extension/vite-config':
+        specifier: workspace:*
+        version: link:../../packages/vite-config
+
   pages/side-panel:
     dependencies:
       '@extension/i18n':

@@ -185,8 +185,23 @@
   "displayErrorReset": {
     "message": "Run Again"
   },
-  "setupTitle": {
-    "message": "Setup"
+  "settingsTitle": {
+    "message": "Settings"
+  },
+  "settingsSubtitle": {
+    "message": "How Wolffish behaves in this browser."
+  },
+  "sectionOnPage": {
+    "message": "On-page presence"
+  },
+  "sectionAccess": {
+    "message": "Browser access"
+  },
+  "siteAccessHint": {
+    "message": "Wolffish needs this to read or drive whatever page you point it at."
+  },
+  "openAction": {
+    "message": "Open"
   },
   "overlayToggle": {
     "message": "Show the Wolffish cursor on pages"

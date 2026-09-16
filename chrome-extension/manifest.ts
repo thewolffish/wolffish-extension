@@ -60,6 +60,13 @@ const manifest = {
   side_panel: {
     default_path: 'side-panel/index.html',
   },
+  // Its own tab, not the cramped dialog Chrome embeds in the extensions list:
+  // the page is a real settings surface, reached from the side panel's gear
+  // and from "Extension options" in the browser's own list.
+  options_ui: {
+    page: 'options/index.html',
+    open_in_tab: true,
+  },
   content_scripts: [
     {
       matches: ['http://*/*', 'https://*/*'],

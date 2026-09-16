@@ -185,8 +185,23 @@
   "displayErrorReset": {
     "message": "إعادة المحاولة"
   },
-  "setupTitle": {
-    "message": "الإعداد"
+  "settingsTitle": {
+    "message": "الإعدادات"
+  },
+  "settingsSubtitle": {
+    "message": "كيف يتصرف وولف فيش في هذا المتصفح."
+  },
+  "sectionOnPage": {
+    "message": "الظهور على الصفحة"
+  },
+  "sectionAccess": {
+    "message": "وصول المتصفح"
+  },
+  "siteAccessHint": {
+    "message": "يحتاج وولف فيش هذا ليقرأ أي صفحة توجّهه إليها أو يتحكم بها."
+  },
+  "openAction": {
+    "message": "فتح"
   },
   "overlayToggle": {
     "message": "إظهار مؤشر وولف فيش على الصفحات"
