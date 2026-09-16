@@ -1,9 +1,9 @@
 import type { OverlayPayload } from '@extension/shared';
 
 /**
- * On-page presence overlay: a top-centre pill ("Wolffish is working in this
- * tab") plus a shadow cursor that glides to wherever the service worker is
- * acting. Plain DOM inside a closed shadow root so page CSS cannot restyle it
+ * On-page presence overlay: a blue glow along the edges of the viewport, a
+ * top-centre pill ("Wolffish is working in this tab") and a shadow cursor
+ * that glides to wherever the service worker is acting. Plain DOM inside a closed shadow root so page CSS cannot restyle it
  * and page scripts cannot reach in. Visuals are copied from the desktop
  * computer-use overlay so the two surfaces read as one product.
  *
@@ -29,13 +29,29 @@ const KBD_SVG =
 
 const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif";
 
+// Edge glow: the desktop indicator's frame (overlay.mjs), scoped to the
+// viewport instead of the display, so a page Wolffish is on is unmistakable
+// from across the room. Hidden for the instant of a capture like the rest of
+// the overlay, so screenshots stay clean.
+const EDGES = (a: number, b: number): string =>
+  ['bottom', 'top', 'right', 'left']
+    .map(dir => `linear-gradient(to ${dir}, rgba(59,130,246,${a}), rgba(59,130,246,${b}) 55%, rgba(59,130,246,0))`)
+    .join(',');
+const GLOW_LAYER =
+  'position:fixed;inset:0;background-repeat:no-repeat;' +
+  'background-size:100% 22px,100% 22px,22px 100%,22px 100%;' +
+  'background-position:top,bottom,left,right;';
+
 const STYLE =
   ':host{position:fixed;inset:0;z-index:2147483647;pointer-events:none;display:block}' +
-  // The desktop glow can sit at 42% opacity because it floats over a darkened
-  // screen. A web page is not ours: the pill has to carry its own contrast on
-  // a white article, a photo, or a dark app, so it is near-opaque with solid
-  // text and a shadow to lift it off the page. Verified on a white page and
-  // on reddit, where the translucent version was unreadable.
+  `#glow{${GLOW_LAYER}background-image:${EDGES(0.4, 0.12)};display:none;opacity:0}` +
+  '#glow.show{display:block;animation:fi .45s ease-out forwards}' +
+  `#breathe{${GLOW_LAYER}background-image:${EDGES(0.62, 0.2)};opacity:0;animation:br 3.2s ease-in-out infinite}` +
+  // The pill keeps its own blue palette — a web page is not ours, so solid
+  // text and a shadow are what make it legible on a white article or a photo.
+  // Only the element's opacity is dialled back (`fc`, not `fi`): the whole
+  // notice sits a little lighter on the page now that the glow above frames
+  // the window, without washing the navy out to grey.
   '#chip{position:fixed;top:10px;left:50%;transform:translateX(-50%);display:none;align-items:center;gap:8px;' +
   'padding:7px 16px;border-radius:999px;background:rgba(11,18,38,.94);' +
   'backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);' +
@@ -43,7 +59,7 @@ const STYLE =
   'border:1px solid rgba(120,170,255,.45);color:#EAF1FF;' +
   `font:500 13px/1.2 ${FONT};letter-spacing:.2px;white-space:nowrap;max-width:calc(100vw - 40px);` +
   'overflow:hidden;text-overflow:ellipsis;opacity:0}' +
-  '#chip.show{display:flex;animation:fi .45s ease-out forwards}' +
+  '#chip.show{display:flex;animation:fc .45s ease-out forwards}' +
   '#dot{flex:none;width:7px;height:7px;border-radius:50%;background:#60A5FA;box-shadow:0 0 8px 2px rgba(96,165,250,.55);' +
   'animation:db 2.4s ease-in-out infinite}' +
   // Shadow cursor. #cur is translated so its (0,0) is the hotspot: the arrow
@@ -68,11 +84,13 @@ const STYLE =
   'box-sizing:border-box;display:none;opacity:0}' +
   '#target.on{display:block;animation:tg .6s ease-out forwards}' +
   '@keyframes fi{to{opacity:1}}' +
+  '@keyframes fc{to{opacity:.8}}' +
   '@keyframes db{0%,100%{opacity:.45}50%{opacity:1}}' +
+  '@keyframes br{0%,100%{opacity:.12}50%{opacity:1}}' +
   '@keyframes rg{0%{opacity:.9;transform:scale(.5)}100%{opacity:0;transform:scale(1.8)}}' +
   '@keyframes tg{0%{opacity:1}70%{opacity:1}100%{opacity:0}}' +
-  '@media (prefers-reduced-motion:reduce){#chip.show{opacity:1}#target.on{opacity:1}' +
-  '#chip,#dot,#cur,#ring,#target{animation:none!important;transition:none!important}}';
+  '@media (prefers-reduced-motion:reduce){#chip.show{opacity:.8}#target.on{opacity:1}#glow.show{opacity:1}' +
+  '#chip,#dot,#cur,#ring,#target,#glow,#breathe{animation:none!important;transition:none!important}}';
 
 interface CursorState {
   x: number;
@@ -95,6 +113,7 @@ const overlayState: { pill: PillState | null; cursor: CursorState | null; captur
 
 interface Mounted {
   host: HTMLElement;
+  glow: HTMLElement;
   chip: HTMLElement;
   chipText: HTMLElement;
   cur: HTMLElement;
@@ -152,6 +171,12 @@ const mount = (): Mounted => {
   style.textContent = STYLE;
   shadow.appendChild(style);
 
+  const glow = document.createElement('div');
+  glow.id = 'glow';
+  const breathe = document.createElement('div');
+  breathe.id = 'breathe';
+  glow.appendChild(breathe);
+
   const chip = document.createElement('div');
   chip.id = 'chip';
   const dot = document.createElement('div');
@@ -176,10 +201,10 @@ const mount = (): Mounted => {
   const target = document.createElement('div');
   target.id = 'target';
 
-  shadow.append(chip, cur, target);
+  shadow.append(glow, chip, cur, target);
   document.documentElement.appendChild(host);
 
-  mounted = { host, chip, chipText, cur, ring, lbl, target };
+  mounted = { host, glow, chip, chipText, cur, ring, lbl, target };
 
   // Pages that prune unknown children of <html> (or swap it) take the host
   // with them; put it back and replay state.
@@ -200,6 +225,7 @@ const applyPill = (m: Mounted, pill: PillState) => {
   m.chip.dir = t.dir;
   m.chipText.textContent = pill.mode === 'reading' ? t.reading : pill.text || t.working;
   m.chip.classList.add('show');
+  m.glow.classList.add('show');
 };
 
 const applyCursor = (m: Mounted, c: CursorState, animate: boolean) => {
@@ -281,6 +307,7 @@ const handleOverlay = (payload: OverlayPayload): void => {
       overlayState.cursor = null;
       if (!mounted) return;
       mounted.chip.classList.remove('show');
+      mounted.glow.classList.remove('show');
       mounted.cur.className = '';
       mounted.target.classList.remove('on');
       break;
