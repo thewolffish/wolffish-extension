@@ -17,6 +17,21 @@ const STATUS_KEYS = {
   disconnected: 'statusDisconnected',
 } as const;
 
+// Motion reads the state before the label does: the icon spins while
+// connecting, pulses while waiting for the app, and holds still when connected.
+const STATUS_FX = {
+  connected: '',
+  connecting: 'spin',
+  disconnected: 'pulse',
+} as const;
+
+// The status colour again at a given opacity — the alert's fill and border
+// follow the same palette as its text, from the one set of constants.
+const withAlpha = (hex: string, alpha: number): string => {
+  const value = parseInt(hex.slice(1), 16);
+  return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`;
+};
+
 const EVENT_TYPE_KEYS = {
   navigate: { key: 'eventTypeNav', color: '#3B82F6' },
   click: { key: 'eventTypeClick', color: '#8B5CF6' },
@@ -209,6 +224,7 @@ const SidePanel = () => {
 
   const statusColor = STATUS_COLORS[status];
   const statusLabel = t(STATUS_KEYS[status]);
+  const statusFx = STATUS_FX[status];
   const logoUrl = chrome.runtime.getURL('side-panel/wolffish-logo.png');
 
   const displayConversation = viewingConversation ?? activeConversation;
@@ -224,37 +240,86 @@ const SidePanel = () => {
   return (
     <div className={`panel ${theme}`} dir={dir}>
       <header className="panel-header">
-        <div className="panel-header-left">
-          <img src={logoUrl} alt="Wolffish" className="panel-logo" />
-          <span className="panel-title">{t('extensionName')}</span>
-          <code className="panel-version">v{chrome.runtime.getManifest().version}</code>
-          {port > 0 && <code className="panel-version">:{port}</code>}
-        </div>
-        <div className="panel-header-right">
-          <div className={`panel-status ${status !== 'connected' ? 'pulse' : ''}`}>
-            <span className="panel-dot" style={{ backgroundColor: statusColor }} />
-            <span className="panel-status-text" style={{ color: statusColor }}>
-              {statusLabel}
-            </span>
+        <div className="panel-header-row">
+          <div className="panel-header-left">
+            <img src={logoUrl} alt="Wolffish" className="panel-logo" />
+            <span className="panel-title">{t('extensionName')}</span>
+            <code className="panel-version">v{chrome.runtime.getManifest().version}</code>
+            {port > 0 && <code className="panel-version">:{port}</code>}
           </div>
-          <button
-            type="button"
-            className="panel-gear"
-            title={t('settingsTitle')}
-            aria-label={t('settingsTitle')}
-            onClick={() => chrome.runtime.openOptionsPage()}>
-            <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" focusable="false">
-              <g fill="currentColor">
-                {GEAR_TEETH.map(angle => (
-                  <rect key={angle} x="7" y="0.9" width="2" height="3.4" rx="0.7" transform={`rotate(${angle} 8 8)`} />
-                ))}
+          <div className="panel-header-right">
+            <button
+              type="button"
+              className="panel-gear"
+              title={t('settingsTitle')}
+              aria-label={t('settingsTitle')}
+              onClick={() => chrome.runtime.openOptionsPage()}>
+              <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" focusable="false">
+                <g fill="currentColor">
+                  {GEAR_TEETH.map(angle => (
+                    <rect
+                      key={angle}
+                      x="7"
+                      y="0.9"
+                      width="2"
+                      height="3.4"
+                      rx="0.7"
+                      transform={`rotate(${angle} 8 8)`}
+                    />
+                  ))}
+                  <path
+                    fillRule="evenodd"
+                    d="M8 2.8a5.2 5.2 0 1 0 0 10.4 5.2 5.2 0 0 0 0-10.4Zm0 3a2.2 2.2 0 1 1 0 4.4 2.2 2.2 0 0 1 0-4.4Z"
+                  />
+                </g>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div
+          className="panel-status-alert"
+          role="status"
+          style={{
+            color: statusColor,
+            backgroundColor: withAlpha(statusColor, 0.12),
+            borderColor: withAlpha(statusColor, 0.4),
+          }}>
+          <span className={`panel-status-icon ${statusFx}`} aria-hidden="true">
+            {status === 'connected' && (
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
                 <path
-                  fillRule="evenodd"
-                  d="M8 2.8a5.2 5.2 0 1 0 0 10.4 5.2 5.2 0 0 0 0-10.4Zm0 3a2.2 2.2 0 1 1 0 4.4 2.2 2.2 0 0 1 0-4.4Z"
+                  d="M3.5 8.5 6.5 11.5 12.5 4.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                 />
-              </g>
-            </svg>
-          </button>
+              </svg>
+            )}
+            {status === 'connecting' && (
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                <path
+                  d="M14 8a6 6 0 1 1 -4.15 -5.71"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                />
+              </svg>
+            )}
+            {status === 'disconnected' && (
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                <g fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M8 14.7v-3.5" />
+                  <path d="M6 5.4V1.8" />
+                  <path d="M10 5.4V1.8" />
+                  <path d="M12 5.4v3.2a2.6 2.6 0 0 1-2.6 2.6H6.6A2.6 2.6 0 0 1 4 8.6V5.4Z" />
+                </g>
+              </svg>
+            )}
+          </span>
+          <span className="panel-status-text">{statusLabel}</span>
         </div>
       </header>
 
