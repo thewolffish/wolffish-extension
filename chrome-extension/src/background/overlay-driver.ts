@@ -110,8 +110,13 @@ const post = async (tabId: number, payload: OverlayPayload, force = false): Prom
   }
 };
 
-const pillText = async (): Promise<string | undefined> => {
-  const label = await getActivityLabel();
+/**
+ * The pill says what is being done *in this tab*, so it reads the label of the
+ * job driving it — with a group per job, a shared label would put one job's
+ * words on another job's page.
+ */
+const pillText = async (tabId: number, session?: string): Promise<string | undefined> => {
+  const label = await getActivityLabel(tabId, session);
   const emoji = (label?.emoji ?? '').trim();
   const text = (label?.text ?? '').trim();
   if (!emoji && !text) return undefined;
@@ -123,7 +128,7 @@ const pillText = async (): Promise<string | undefined> => {
  * time, upgrades 'read' to 'input' when the task starts acting, and re-arms
  * the idle sweep.
  */
-const markTabInUse = async (tabId: number, kind: InUseKind): Promise<void> => {
+const markTabInUse = async (tabId: number, kind: InUseKind, session?: string): Promise<void> => {
   const previous = inUse.get(tabId);
   inUse.set(tabId, { at: Date.now(), kind });
   persist();
@@ -132,7 +137,7 @@ const markTabInUse = async (tabId: number, kind: InUseKind): Promise<void> => {
   // Repaint when the tab is new to us or the mode changed; otherwise the pill
   // is already up and repainting it on every command is pure message traffic.
   if (previous && previous.kind === kind) return;
-  await post(tabId, { type: 'overlay', op: 'pill', mode: pillMode(kind), text: await pillText() });
+  await post(tabId, { type: 'overlay', op: 'pill', mode: pillMode(kind), text: await pillText(tabId, session) });
 };
 
 const clearTab = async (tabId: number): Promise<void> => {
@@ -166,7 +171,12 @@ api.webNavigation?.onCompleted?.addListener(async details => {
   if (details.frameId !== 0 || !enabled) return;
   const entry = inUse.get(details.tabId);
   if (!entry || Date.now() - entry.at > OVERLAY_IDLE_MS) return;
-  await post(details.tabId, { type: 'overlay', op: 'pill', mode: pillMode(entry.kind), text: await pillText() });
+  await post(details.tabId, {
+    type: 'overlay',
+    op: 'pill',
+    mode: pillMode(entry.kind),
+    text: await pillText(details.tabId),
+  });
   const cursor = lastCursor.get(details.tabId);
   if (cursor) {
     await post(details.tabId, {

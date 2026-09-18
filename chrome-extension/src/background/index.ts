@@ -8,6 +8,7 @@ import {
   INPUT_COMMANDS,
   READ_COMMANDS,
   RECONNECT_ALARM_MINUTES,
+  SESSION_PARAM,
   WolffishCommands,
   CONTENT_SCRIPT_COMMANDS,
   SERVICE_WORKER_COMMANDS,
@@ -118,17 +119,27 @@ import { getBrowserIdentity } from './identity';
 import {
   adoptTab,
   ensureWorkspaceTab,
-  getWorkspaceGroupId,
+  getWorkspaceGroupIds,
   openWorkspaceTab,
   rememberWorkspaceTab,
   setActivity,
 } from './workspace';
 
+/**
+ * Which conversation a command belongs to. The dispatcher stamps it onto params
+ * (see handleCommand), so any handler that touches the workspace can name the
+ * session whose group it means without a second argument on every signature.
+ */
+const sessionOf = (params: Record<string, unknown>): string | undefined => {
+  const value = params?.[SESSION_PARAM];
+  return typeof value === 'string' && value ? value : undefined;
+};
+
 const api = globalThis.chrome;
 
 // Every command that does not name a tab targets Wolffish's own tab (created on
-// first use, inside the Wolffish tab group) instead of whatever the user was
-// looking at. This one line covers all ~15 `resolveTabId` call sites.
+// first use, inside that conversation's tab group) instead of whatever the user
+// was looking at. This one line covers all ~15 `resolveTabId` call sites.
 setTabFallback(ensureWorkspaceTab);
 
 let connectionStatus: ConnectionStatus = 'disconnected';
@@ -346,7 +357,9 @@ const waitForTabSettled = (tabId: number, beforeUrl: string, timeoutMs: number):
 
 const handleNavigate = async (params: Record<string, unknown>): Promise<BrowserNavigateResult> => {
   const { url, waitUntil, newTab } = params as unknown as BrowserNavigateParams;
-  const tabId = newTab ? await openWorkspaceTab() : await resolveTabId(params as { tabId?: number });
+  const tabId = newTab
+    ? await openWorkspaceTab({ session: sessionOf(params) })
+    : await resolveTabId(params as { tabId?: number });
 
   // Snapshot where the tab is *before* navigating so waitForTabSettled can
   // tell a real commit from a stale read of the page we're leaving.
@@ -401,9 +414,10 @@ const handleTabsList = async (params: Record<string, unknown>): Promise<BrowserT
   const query = windowId !== undefined ? { windowId } : {};
   const tabs = await api.tabs.query(query);
 
-  // `wolffish` marks the tabs it is free to drive; everything else is the
-  // user's, and is only touched when a command names its id explicitly.
-  const groupId = await getWorkspaceGroupId();
+  // `wolffish` marks the tabs Wolffish opened — its own, across every session —
+  // and everything else is the user's, touched only when a command names its id
+  // explicitly.
+  const groupIds = await getWorkspaceGroupIds();
 
   return {
     tabs: tabs.map(t => ({
@@ -414,14 +428,14 @@ const handleTabsList = async (params: Record<string, unknown>): Promise<BrowserT
       pinned: t.pinned,
       windowId: t.windowId,
       groupId: t.groupId,
-      wolffish: groupId !== null && t.groupId === groupId,
+      wolffish: typeof t.groupId === 'number' && groupIds.includes(t.groupId),
     })),
   };
 };
 
 const handleTabOpen = async (params: Record<string, unknown>): Promise<BrowserTabOpenResult> => {
   const { url, active } = params as unknown as BrowserTabOpenParams;
-  const tabId = await openWorkspaceTab(url, active ?? true);
+  const tabId = await openWorkspaceTab({ url, active: active ?? true, session: sessionOf(params) });
   const tab = await api.tabs.get(tabId).catch(() => null);
 
   return {
@@ -440,9 +454,9 @@ const handleTabClose = async (params: Record<string, unknown>): Promise<{ succes
 const handleTabSwitch = async (params: Record<string, unknown>): Promise<{ success: boolean }> => {
   const { tabId } = params as unknown as BrowserTabSwitchParams;
   await api.tabs.update(tabId, { active: true });
-  // Switching between Wolffish's own tabs also moves the default target; a
-  // switch into one of the user's tabs deliberately does not.
-  await rememberWorkspaceTab(tabId);
+  // Switching between Wolffish's own tabs also moves this session's default
+  // target; a switch into one of the user's tabs deliberately does not.
+  await rememberWorkspaceTab(tabId, sessionOf(params));
 
   return { success: true };
 };
@@ -456,8 +470,9 @@ const handleTabDuplicate = async (params: Record<string, unknown>): Promise<Brow
   }
 
   // The copy is Wolffish's, even when the original was the user's — so it joins
-  // the group and becomes the target rather than being left stranded outside.
-  await adoptTab(newTab.id!);
+  // this session's group and becomes its target rather than being left stranded
+  // outside.
+  await adoptTab(newTab.id!, sessionOf(params));
 
   return { tabId: newTab.id! };
 };
@@ -862,12 +877,14 @@ const handleNotify = async (params: Record<string, unknown>): Promise<BrowserNot
 // ─── Tab Group Activity Handler ─────────────────────────────────────────────
 
 /**
- * The Wolffish tab group's title is fully model-driven: it sets an emoji and a
- * short phrase for whatever it is doing, and clearing both restores "Wolffish".
+ * The tab group's title is fully model-driven: it sets an emoji and a short
+ * phrase for whatever it is doing, and clearing both restores "Wolffish". It
+ * titles the group of the conversation that sent it and no other — a label one
+ * job writes is never left standing over the next job's work.
  */
 const handleSetActivity = async (params: Record<string, unknown>): Promise<BrowserSetActivityResult> => {
   const { emoji, text } = params as unknown as BrowserSetActivityParams;
-  return setActivity({ emoji, text });
+  return setActivity({ emoji, text }, sessionOf(params));
 };
 
 // ─── Get URL Handler ────────────────────────────────────────────────────────
@@ -1112,6 +1129,13 @@ const TAB_AGNOSTIC = new Set<string>([
 const handleCommand = async (command: WolffishCommand): Promise<void> => {
   log('←', command.type, command.params);
 
+  // Which conversation this came from. Stamping it onto params is what lets the
+  // ~15 `resolveTabId(params)` call sites — and the handlers below — resolve
+  // against that session's own tab and group, rather than one shared workspace
+  // whose title and tab the previous job left behind.
+  const session = typeof command.session === 'string' ? command.session.trim() : '';
+  command.params = session ? { ...(command.params ?? {}), [SESSION_PARAM]: session } : (command.params ?? {});
+
   try {
     let response: WolffishResponse;
     const kind = commandKind(command.type);
@@ -1137,7 +1161,7 @@ const handleCommand = async (command: WolffishCommand): Promise<void> => {
       }
     }
 
-    if (tabId !== null && kind) void markTabInUse(tabId, kind);
+    if (tabId !== null && kind) void markTabInUse(tabId, kind, session || undefined);
 
     // The page's state BEFORE the action: a click handler that appends a node
     // runs synchronously, so a comparison made only afterwards sees nothing.

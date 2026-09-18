@@ -2,6 +2,13 @@ export const DEFAULT_PORT = 23151;
 export const LOG_PREFIX = '[Wolffish]';
 
 /**
+ * Params key the command dispatcher stamps the conversation id onto, so tab
+ * resolution and workspace lookups find the right session. Prefixed because it
+ * travels alongside real tool arguments and must never collide with one.
+ */
+export const SESSION_PARAM = '__wfSession';
+
+/**
  * Reconnect cadence. Chrome clamps MV3 alarms to a 30-second floor for
  * installed/unpacked extensions, so the honest value is half a minute; the
  * 15-second WebSocket ping is what keeps the worker alive while connected.

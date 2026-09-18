@@ -1,5 +1,5 @@
 import { LOG_PREFIX, CONTENT_SCRIPT_PING_TIMEOUT_MS } from './constants.js';
-import type { InternalMessage, WolffishResponse } from './types.js';
+import type { InternalMessage, TabTarget, WolffishResponse } from './types.js';
 
 const api = globalThis.chrome ?? (globalThis as Record<string, unknown>).browser;
 
@@ -66,19 +66,20 @@ const ensureContentScriptInjected = async (tabId: number): Promise<void> => {
   });
 };
 
-let tabFallback: (() => Promise<number>) | null = null;
+let tabFallback: ((session?: string) => Promise<number>) | null = null;
 
 /**
  * Replace what `resolveTabId` falls back to when no usable `tabId` was passed.
  * The background registers the Wolffish workspace tab here, so no command can
- * default onto a tab the user opened. Left unset the fallback stays the active
- * tab, which is what non-background contexts want.
+ * default onto a tab the user opened. It is handed the command's session, since
+ * each conversation has a workspace tab of its own. Left unset the fallback
+ * stays the active tab, which is what non-background contexts want.
  */
-const setTabFallback = (fn: (() => Promise<number>) | null): void => {
+const setTabFallback = (fn: ((session?: string) => Promise<number>) | null): void => {
   tabFallback = fn;
 };
 
-const resolveTabId = async (params: { tabId?: number }): Promise<number> => {
+const resolveTabId = async (params: TabTarget): Promise<number> => {
   // A provided tabId is verified before use. Agents routinely pass a guessed
   // or stale id (observed live: `tabId: 1`, which never exists — Chrome ids
   // are large integers), and the resulting "No tab with id: N" classifies as
@@ -92,7 +93,7 @@ const resolveTabId = async (params: { tabId?: number }): Promise<number> => {
       .catch(() => false);
     if (exists) return params.tabId;
   }
-  if (tabFallback) return tabFallback();
+  if (tabFallback) return tabFallback(params.__wfSession);
   const tabs = await api?.tabs?.query({ active: true, currentWindow: true });
   if (!tabs?.length) throw new Error('No active tab found');
   return tabs[0].id!;

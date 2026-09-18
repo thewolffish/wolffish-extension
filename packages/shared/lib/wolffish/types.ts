@@ -6,6 +6,24 @@ export interface WolffishCommand {
   id: string;
   type: string;
   params: Record<string, unknown>;
+  /**
+   * Which Wolffish conversation sent this command. Each one drives its own tab
+   * group, so two jobs running at once — or one right after another — never
+   * inherit each other's tab or each other's group title. Absent from an older
+   * desktop build, which then shares the single default workspace.
+   */
+  session?: string;
+}
+
+/**
+ * What `resolveTabId` needs out of a command's params. `__wfSession` is not a
+ * tool argument: the dispatcher stamps the command's session onto params so
+ * every existing `resolveTabId(params)` call site resolves against the right
+ * workspace without threading a second argument through all of them.
+ */
+export interface TabTarget {
+  tabId?: number;
+  __wfSession?: string;
 }
 
 export interface WolffishResponse {
